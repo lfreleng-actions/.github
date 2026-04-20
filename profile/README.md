@@ -167,6 +167,7 @@ with signed tags and provenance attestations.
 | [project-reporting-tool]      | Comprehensive multi-repository analysis tool for Linux Foundation projects |
 | [project-reporting-artifacts] | Generated reports and data artefacts from the Project Reporting Tool       |
 | [github-report]               | GitHub organisation posture reporting                                      |
+| [github-network-audit]        | Build harden-runner egress allowlists from StepSecurity endpoint data      |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -406,6 +407,7 @@ to all repositories unless otherwise stated.
 [project-reporting-tool]: https://github.com/lfreleng-actions/project-reporting-tool
 [project-reporting-artifacts]: https://github.com/lfreleng-actions/project-reporting-artifacts
 [github-report]: https://github.com/lfreleng-actions/github-report
+[github-network-audit]: https://github.com/lfreleng-actions/github-network-audit
 
 <!-- Test Fixtures & Sample Projects -->
 [test-python-project]: https://github.com/lfreleng-actions/test-python-project
