@@ -435,7 +435,7 @@ jobs:
         # download-artifact would extract under `./zizmor-sarif/` and
         # the upload-sarif step's `sarif_file:` would not find it.
         # yamllint disable-line rule:line-length
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: 'zizmor-sarif'
           path: '.'
