@@ -1,0 +1,37 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Dependabot configuration for the lfreleng-actions/.github repository.
+#
+# The `pip` ecosystem entry exists only to keep the zizmor pin in
+# .github/dependabot/zizmor-requirements.txt current. The workflow at
+# .github/workflows/zizmor.yaml reads the pin from that file at run-
+# time; nothing ever runs `pip install -r` against it.
+
+version: 2
+updates:
+  # Workflows in this repository (action versions).
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    commit-message:
+      prefix: 'CI(actions)'
+    # Wait a few days before opening a bump PR so we don't churn on
+    # a release that gets retracted or superseded shortly after it
+    # ships. Also satisfies zizmor's `dependabot-cooldown` audit.
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 15
+
+  # zizmor pin, consumed by .github/workflows/zizmor.yaml.
+  - package-ecosystem: 'pip'
+    directory: '/.github/dependabot'
+    schedule:
+      interval: 'weekly'
+    commit-message:
+      prefix: 'Chore(deps)'
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 15
