@@ -217,6 +217,7 @@ verify the actions and workflows in this organisation:
 | [dependamerge]         | Bulk merge/close pull requests and Gerrit changes across an org  |
 | [docs-conf]            | Sphinx build configuration for Release Engineering documentation |
 | [gerrit-to-platform]   | Gerrit hooks to allow using GitHub and GitLab as CI platforms    |
+| [lftools-uv]           | Release Engineering management tooling/utilities (Python)        |
 | [markdown-table-fixer] | Fix markdown table formatting as a CLI tool or pre-commit hook   |
 | [pull-request-fixer]   | Fix pull request titles, bodies, and files across a GitHub org   |
 
@@ -433,6 +434,7 @@ to all repositories unless otherwise stated.
 [dependamerge]: https://github.com/lfit/dependamerge
 [docs-conf]: https://gerrit.linuxfoundation.org/infra/admin/repos/releng/docs-conf
 [gerrit-to-platform]: https://gerrit.linuxfoundation.org/infra/admin/repos/releng/gerrit_to_platform
+[lftools-uv]: https://github.com/lfreleng-actions/lftools-uv
 [markdown-table-fixer]: https://github.com/lfreleng-actions/markdown-table-fixer
 [pull-request-fixer]: https://github.com/lfreleng-actions/pull-request-fixer
 
