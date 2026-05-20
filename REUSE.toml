@@ -6,7 +6,8 @@ version = 1
 [[annotations]]
 path = [
      "excluded-repos.json",
-     "LICENSE"
+     "LICENSE",
+     ".github/harden-runner/**"
 ]
 SPDX-License-Identifier = "Apache-2.0"
 SPDX-FileCopyrightText = "2026 The Linux Foundation"
