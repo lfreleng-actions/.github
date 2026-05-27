@@ -1,0 +1,23 @@
+# lfreleng-actions: globally allow-listed Python audit vulnerabilities
+#
+# Format: whitespace-separated vulnerability IDs. '#' introduces a
+# comment, either as a full-line comment or trailing on a non-comment
+# line. Blank lines are ignored. Each entry should reference an
+# upstream issue or note the reason it appears here.
+#
+# Consumed by: https://github.com/lfreleng-actions/python-audit-action
+
+# pip GHSA-4xh5-x5gv-qwph (CVE-2025-8869): pip's fallback tar
+# extraction does not check that symlinks resolve inside the
+# extraction directory. Fixed upstream in pip 25.3 (Sept 2025), but
+# actions/setup-python images often still ship pip <= 25.2; remove
+# this entry once the runner-shipped pip reliably ships >= 25.3.
+# https://github.com/advisories/GHSA-4xh5-x5gv-qwph
+GHSA-4xh5-x5gv-qwph
+
+# pyjwt PYSEC-2025-183 (CVE-2025-45768): "weak encryption" claim
+# disputed by upstream. The key length is the responsibility of the
+# application that uses the library, not pyjwt itself. No fix is
+# planned; this entry is permanent.
+# https://osv.dev/vulnerability/PYSEC-2025-183
+PYSEC-2025-183
