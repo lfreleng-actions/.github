@@ -117,7 +117,11 @@ jobs:
             pin_ref='main'
             pin_url="https://raw.githubusercontent.com/lfreleng-actions/.github/${pin_ref}/.github/dependabot/zizmor-requirements.txt"
             pin_file="$(mktemp -t zizmor-pin.XXXXXX.txt)"
+            # Bounded retries + timeouts so a transient network blip
+            # does not hang or spuriously fail the audit.
             curl --fail --silent --show-error \
+              --retry 3 --retry-delay 2 --retry-connrefused \
+              --connect-timeout 10 --max-time 30 \
               -o "${pin_file}" "${pin_url}"
             pin_source="lfreleng-actions/.github@${pin_ref}"
           fi
