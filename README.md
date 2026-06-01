@@ -145,22 +145,24 @@ scanning** tab once the change lands on the default branch.
 
 #### Updating zizmor
 
-The zizmor version pin lives in
-[`.github/dependabot/zizmor-requirements.txt`](.github/dependabot/zizmor-requirements.txt)
-as a single `zizmor==<version>` line. The workflow fetches that file
-from this repository at run-time (via `raw.githubusercontent.com`) and
-passes the pin to `uvx --from`, so the workflow itself never embeds a
-static version string.
+The audit logic and the pinned zizmor version both live in the
+[`zizmor-scan-action`](https://github.com/lfreleng-actions/zizmor-scan-action)
+composite action. `zizmor.yaml` pins that action by commit SHA, and the
+action reads its `zizmor==<version>` pin from its own bundled
+`pyproject.toml` at run time, so this workflow embeds no version string.
 
-[Dependabot](.github/dependabot.yml) watches the file under its `pip`
-ecosystem and opens a weekly PR (`Chore(deps): Bump zizmor from X to
-Y`) when a new release ships. After the change merges, every audited
-repository in the organisation picks up the new pin on its next run.
-A 7-day cooldown blocks Dependabot from churning on releases that get
-upstream retracts or supersedes them within days.
+The action's own repository owns the zizmor version. Dependabot's `uv`
+ecosystem opens a weekly PR there; merging it cuts a new action
+release. [Dependabot](.github/dependabot.yml) in this repository then
+bumps the pinned action ref under its `github-actions` ecosystem
+(`CI(actions): Bump lfreleng-actions/zizmor-scan-action ...`). After
+that PR merges, every audited repository picks up the new version on
+its next run. A 7-day cooldown blocks churn on releases that upstream
+retracts or supersedes within days.
 
-To upgrade manually, edit the pin file and merge a PR through the
-normal review process.
+To upgrade manually, bump the pinned action ref in
+[`.github/workflows/zizmor.yaml`](.github/workflows/zizmor.yaml) and
+merge a PR through the normal review process.
 
 #### Promoting findings to merge-blocking
 

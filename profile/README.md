@@ -110,10 +110,11 @@ with signed tags and provenance attestations.
 | [1password-secrets-action]       | Securely retrieve secrets from 1Password vaults                         |
 | [credential-load-action]         | Retrieve project/repository specific credentials from a 1Password vault |
 | [harden-runner-block-action]     | Load an egress allow-list for step-security/harden-runner block mode    |
-| [sigul-docker]                   | Sign build packages, artefacts, and git tags using Sigul                |
+| [sigul-sign-docker]              | Sign build packages, artefacts, and git tags using Sigul                |
 | [spdx-verify-action]             | Verify files contain the required SPDX license headers                  |
 | [sonarqube-cloud-scan-action]    | Perform a SonarQube Cloud scan and upload the results                   |
 | [sonatype-lifecycle-scan-action] | Run a Sonatype Lifecycle (Nexus IQ) scan                                |
+| [zizmor-scan-action]             | Audit GitHub Actions workflows for security defects with zizmor         |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -373,10 +374,11 @@ to all repositories unless otherwise stated.
 [1password-secrets-action]: https://github.com/lfreleng-actions/1password-secrets-action
 [credential-load-action]: https://github.com/lfreleng-actions/credential-load-action
 [harden-runner-block-action]: https://github.com/lfreleng-actions/harden-runner-block-action
-[sigul-docker]: https://github.com/lfreleng-actions/sigul-docker
+[sigul-sign-docker]: https://github.com/lfreleng-actions/sigul-sign-docker
 [spdx-verify-action]: https://github.com/lfreleng-actions/spdx-verify-action
 [sonarqube-cloud-scan-action]: https://github.com/lfreleng-actions/sonarqube-cloud-scan-action
 [sonatype-lifecycle-scan-action]: https://github.com/lfreleng-actions/sonatype-lifecycle-scan-action
+[zizmor-scan-action]: https://github.com/lfreleng-actions/zizmor-scan-action
 
 <!-- Repository & Code Quality Actions -->
 [repository-metadata-action]: https://github.com/lfreleng-actions/repository-metadata-action
