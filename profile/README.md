@@ -114,6 +114,7 @@ with signed tags and provenance attestations.
 | [spdx-verify-action]             | Verify files contain the required SPDX license headers                  |
 | [sonarqube-cloud-scan-action]    | Perform a SonarQube Cloud scan and upload the results                   |
 | [sonatype-lifecycle-scan-action] | Run a Sonatype Lifecycle (Nexus IQ) scan                                |
+| [zizmor-scan-action]             | Audit GitHub Actions workflows for security defects with zizmor         |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -377,6 +378,7 @@ to all repositories unless otherwise stated.
 [spdx-verify-action]: https://github.com/lfreleng-actions/spdx-verify-action
 [sonarqube-cloud-scan-action]: https://github.com/lfreleng-actions/sonarqube-cloud-scan-action
 [sonatype-lifecycle-scan-action]: https://github.com/lfreleng-actions/sonatype-lifecycle-scan-action
+[zizmor-scan-action]: https://github.com/lfreleng-actions/zizmor-scan-action
 
 <!-- Repository & Code Quality Actions -->
 [repository-metadata-action]: https://github.com/lfreleng-actions/repository-metadata-action
