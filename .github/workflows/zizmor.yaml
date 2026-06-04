@@ -51,11 +51,22 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: 'Harden runner'
+      # Load the egress allow-list out-of-band from
+      # lfreleng-actions/.github and publish it as
+      # $CONNECTION_ALLOW_LIST for the harden-runner step below.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@42663a22f7abe31521cbc6120901353a4b2849bc  # v0.2.0
+        with:
+          config: '@18d9c4446bea555d0783e850f6d295f844fe8f67'  # v0.1.1
+
+      # Harden the runner with the just-loaded allow-list.
+      - name: 'Harden runner (block)'
         # yamllint disable-line rule:line-length
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: 'audit'
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
 
       - name: 'Checkout repository under audit'
         # yamllint disable-line rule:line-length
@@ -97,11 +108,22 @@ jobs:
       # repositories (harmless on public ones).
       actions: read
     steps:
-      - name: 'Harden runner'
+      # Load the egress allow-list out-of-band from
+      # lfreleng-actions/.github and publish it as
+      # $CONNECTION_ALLOW_LIST for the harden-runner step below.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@42663a22f7abe31521cbc6120901353a4b2849bc  # v0.2.0
+        with:
+          config: '@18d9c4446bea555d0783e850f6d295f844fe8f67'  # v0.1.1
+
+      # Harden the runner with the just-loaded allow-list.
+      - name: 'Harden runner (block)'
         # yamllint disable-line rule:line-length
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
         with:
-          egress-policy: 'audit'
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
 
       - name: 'Download SARIF artifact'
         # yamllint disable-line rule:line-length
