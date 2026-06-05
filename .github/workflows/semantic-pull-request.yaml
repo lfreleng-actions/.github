@@ -1,6 +1,6 @@
 ---
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2025 The Linux Foundation
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
 
 name: 'Semantic Pull Request 🛠️'
 
@@ -20,47 +20,15 @@ concurrency:
 jobs:
   semantic-pull-request:
     name: "Semantic Pull Request"
+    # Delegate to the shared reusable workflow, which tolerates Dependabot's
+    # truncated single-commit subjects for long dependency names that
+    # otherwise trip validateSingleCommitMatchesPrTitle. This file is the
+    # canonical copy injected org-wide by the mandatory-workflows ruleset,
+    # so the fix reaches every repository.
+    # yamllint disable-line rule:line-length
+    uses: lfit/releng-reusable-workflows/.github/workflows/reuse-semantic-pull-request.yaml@b2adc11cd90f0ca72a34202589a06d374b5d8366  # v0.5.0
     permissions:
       contents: read
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
-      # Load the egress allow-list out-of-band from
-      # lfreleng-actions/.github and publish it as
-      # $CONNECTION_ALLOW_LIST for the harden-runner step below.
-      # yamllint disable-line rule:line-length
-      - uses: lfreleng-actions/harden-runner-block-action@42663a22f7abe31521cbc6120901353a4b2849bc  # v0.2.0
-        with:
-          config: '@18d9c4446bea555d0783e850f6d295f844fe8f67'  # v0.1.1
-
-      # Harden the runner with the just-loaded allow-list.
-      - name: 'Harden runner (block)'
-        # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
-        with:
-          egress-policy: 'block'
-          allowed-endpoints: >
-            ${{ env.CONNECTION_ALLOW_LIST }}
-
-      - name: "Validate pull request title"
-        # yamllint disable-line rule:line-length
-        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          # Requires the type to be capitalised,
-          # but accept any of the standard types
-          types: |
-            Fix
-            Feat
-            Chore
-            Docs
-            Style
-            Refactor
-            Perf
-            Test
-            Revert
-            CI
-            Build
-          validateSingleCommit: true
-          validateSingleCommitMatchesPrTitle: true
+      # The called workflow's token is capped by the caller; without this the
+      # gate step's PR API calls fail with 403 on minimal-permission repos.
+      pull-requests: read
