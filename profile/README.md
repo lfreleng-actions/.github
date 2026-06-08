@@ -222,6 +222,7 @@ verify the actions and workflows in this organisation:
 | [lftools-uv]           | Release Engineering management tooling/utilities (Python)        |
 | [markdown-table-fixer] | Fix markdown table formatting as a CLI tool or pre-commit hook   |
 | [pull-request-fixer]   | Fix pull request titles, bodies, and files across a GitHub org   |
+| [python-nss-ng]        | Python bindings for Network Security Services (NSS) and NSPR     |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -435,12 +436,13 @@ to all repositories unless otherwise stated.
 [releng-reusable-workflows]: https://github.com/lfit/releng-reusable-workflows
 
 <!-- Tools -->
-[dependamerge]: https://github.com/lfit/dependamerge
+[dependamerge]: https://github.com/lfreleng-actions/dependamerge
 [docs-conf]: https://gerrit.linuxfoundation.org/infra/admin/repos/releng/docs-conf
 [gerrit-to-platform]: https://gerrit.linuxfoundation.org/infra/admin/repos/releng/gerrit_to_platform
 [lftools-uv]: https://github.com/lfreleng-actions/lftools-uv
 [markdown-table-fixer]: https://github.com/lfreleng-actions/markdown-table-fixer
 [pull-request-fixer]: https://github.com/lfreleng-actions/pull-request-fixer
+[python-nss-ng]: https://github.com/lfreleng-actions/python-nss-ng
 
 <!-- Building GitHub Workflows -->
 [gerrit-to-platform-docs]: https://github.com/lfit/releng-gerrit_to_platform
