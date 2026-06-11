@@ -1,0 +1,38 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Package manager hardening audit (organisation-wide).
+#
+# Thin caller for the reusable workflow in releng-reusable-workflows.
+# This file is the canonical copy enforced organisation-wide via the
+# mandatory-workflows ruleset, so the audit runs on every targeted
+# repository without being copied into each one (it also self-audits
+# this repository on PRs).
+#
+# Non-blocking: warn_only keeps the audit advisory (it always exits 0),
+# so as a required check it never prevents merging while the validation
+# rules are refined retrospectively across the fleet. Drop warn_only in
+# the reusable call to turn it into an enforcing gate.
+name: 'Package Hardening Audit'
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  package-hardening-audit:
+    name: 'Audit package manager hardening'
+    # yamllint disable-line rule:line-length
+    uses: lfit/releng-reusable-workflows/.github/workflows/reuse-package-hardening-audit.yaml@f43b219b8a91dcd082f26419008c8bf5544ec212  # v0.6.0
+    permissions:
+      contents: read
+    with:
+      warn_only: true
