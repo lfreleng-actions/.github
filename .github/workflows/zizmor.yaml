@@ -76,7 +76,7 @@ jobs:
 
       - name: 'Run zizmor audit'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/zizmor-scan-action@cfb17c08005310a8623ef174cc0013493e3a363d  # v0.1.0
+        uses: lfreleng-actions/zizmor-scan-action@cb80d31aa241207c718fb34f37282acaf8bb9bdb  # v0.1.1
 
       - name: 'Upload SARIF artifact'
         # Only needed on default-branch pushes, where the upload job
