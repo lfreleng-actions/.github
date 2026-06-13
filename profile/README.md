@@ -52,6 +52,21 @@ with signed tags and provenance attestations.
 | [nexus-docker-login-action]    | Docker login for all registries in Nexus3 and DockerHub   |
 | [helm-chart-publish-action]    | Publish Helm Charts to an OCI container repository        |
 | [chartmuseum-action]           | Start and run a ChartMuseum Helm Chart repository         |
+| [central-publish-action]       | Publish Maven artefacts to the Maven Central Portal       |
+| [maven-stage-prep-action]      | Prepare a Maven project for a staging release             |
+| [nexus-staging-action]         | Manage the Sonatype Nexus staging repository lifecycle    |
+
+<!-- markdownlint-enable MD013 -->
+
+## ☁️ Cloud & Infrastructure Actions
+
+<!-- markdownlint-disable MD013 -->
+
+| Action                               | Description                                         |
+| ------------------------------------ | --------------------------------------------------- |
+| [packer-build-action]                | Run Packer validate or build via a bastion host     |
+| [tailscale-openstack-bastion-action] | Manage an OpenStack bastion host with Tailscale VPN |
+| [openstack-cron-action]              | Clean up orphaned OpenStack cloud resources         |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -345,6 +360,14 @@ to all repositories unless otherwise stated.
 [nexus-docker-login-action]: https://github.com/lfreleng-actions/nexus-docker-login-action
 [helm-chart-publish-action]: https://github.com/lfreleng-actions/helm-chart-publish-action
 [chartmuseum-action]: https://github.com/lfreleng-actions/chartmuseum-action
+[central-publish-action]: https://github.com/lfreleng-actions/central-publish-action
+[maven-stage-prep-action]: https://github.com/lfreleng-actions/maven-stage-prep-action
+[nexus-staging-action]: https://github.com/lfreleng-actions/nexus-staging-action
+
+<!-- Cloud & Infrastructure Actions -->
+[packer-build-action]: https://github.com/lfreleng-actions/packer-build-action
+[tailscale-openstack-bastion-action]: https://github.com/lfreleng-actions/tailscale-openstack-bastion-action
+[openstack-cron-action]: https://github.com/lfreleng-actions/openstack-cron-action
 
 <!-- Python Project Metadata Actions -->
 [python-project-metadata-action]: https://github.com/lfreleng-actions/python-project-metadata-action
