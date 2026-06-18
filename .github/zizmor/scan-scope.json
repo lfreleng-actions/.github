@@ -1,0 +1,21 @@
+{
+  "organisations": {
+    "lfreleng-actions": {
+      "scan_archived": false,
+      "scan_forks": false,
+      "scan_templates": true,
+      "scan_private": false,
+      "include": [],
+      "exclude": [
+        "test",
+        "tests",
+        "test[-_./]*",
+        "tests[-_./]*",
+        "*[-_./]test",
+        "*[-_./]tests",
+        "*[-_./]test[-_./]*",
+        "*[-_./]tests[-_./]*"
+      ]
+    }
+  }
+}

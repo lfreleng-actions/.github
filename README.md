@@ -47,6 +47,14 @@ organisation unless overridden at the repository level.
   organisation as a *required workflow* via an organisation ruleset;
   see [Organisation-wide zizmor audit](#organisation-wide-zizmor-audit)
   below for the one-time org-admin configuration.
+- **[`zizmor-sarif-publish.yaml`](.github/workflows/zizmor-sarif-publish.yaml)**
+  — A scheduled (weekday) workflow that publishes zizmor findings to each
+  in-scope repository's **default-branch** code scanning. The ruleset-driven
+  `zizmor.yaml` runs on pull requests, so it never populates the
+  default-branch alert list; this workflow closes that gap so downstream
+  reporting reflects reality. See
+  [Organisation-wide zizmor SARIF publisher](#organisation-wide-zizmor-sarif-publisher)
+  below for setup.
 
 ### Repository Exclusions
 
@@ -181,6 +189,138 @@ merge-blocking:
 
 Until an org admin completes that step, `zizmor` operates purely as a
 reporting tool.
+
+### Organisation-wide zizmor SARIF publisher
+
+The `zizmor.yaml` audit runs on `pull_request` events (delivered by an
+organisation ruleset) and never uploads SARIF to a repository's
+**default-branch** code scanning — organisation rulesets do not deliver a
+post-merge `push` event to the target repositories. As a result, each
+repository's default-branch **Security → Code scanning** alert list stays
+empty even when its workflows contain zizmor findings, and anything built
+on that data (e.g. `github-security-report-action`) under-reports zizmor
+accordingly.
+
+The `zizmor-sarif-publish.yaml` workflow closes that gap. On a weekday
+schedule (`0 6 * * 1-5`, 06:00 UTC) it:
+
+1. Enumerates the in-scope repositories for the target organisation.
+2. Applies the [repository scope policy](#repository-scope-policy) from
+   [`.github/zizmor/scan-scope.json`](.github/zizmor/scan-scope.json) — the
+   per-organisation scan toggles and `include`/`exclude` globs, plus any
+   patterns from the `ZIZMOR_SCAN_INCLUDE` / `ZIZMOR_SCAN_EXCLUDE`
+   variables.
+3. Checks out each repository at its default branch, runs
+   [`zizmor-scan-action`](https://github.com/lfreleng-actions/zizmor-scan-action),
+   and uploads the SARIF to that repository's code scanning via
+   `POST /code-scanning/sarifs` against the **default-branch HEAD** (so
+   results land in the default-branch alert list, not a PR-scoped
+   analysis).
+
+#### Required secret
+
+Writing code-scanning results to *other* repositories is beyond what the
+default `GITHUB_TOKEN` can do, so the workflow needs a dedicated PAT in
+the **`ZIZMOR_SARIF_PAT`** repository secret. A **classic PAT** needs the
+scopes:
+
+| Scope             | For                                       |
+| ----------------- | ----------------------------------------- |
+| `repo`            | check out repositories (incl. private)    |
+| `read:org`        | list organisation repositories            |
+| `security_events` | upload SARIF / write code-scanning alerts |
+
+A fine-grained PAT scoped to the organisation works too: Contents read,
+Metadata read, and Code scanning alerts **write**.
+
+#### Manual dispatch inputs
+
+**Run workflow** also triggers the workflow on demand, with three
+optional inputs (all blank by default):
+
+- **`org`** — scan a different organisation. When blank, the workflow
+  targets the organisation it runs in (`github.repository_owner`), which
+  matches the scheduled run. The workflow reads that organisation's scope
+  policy from `.github/zizmor/scan-scope.json`; an organisation with no
+  entry falls back to the default toggles and the scan variables alone.
+- **`repo`** — scan a single named repository (for smoke-testing). The
+  scope policy still applies, so the workflow produces an empty matrix —
+  publishing nothing — for any repository that the toggles or scope policy
+  remove (a skipped category such as archived, fork, template, private or
+  disabled, an `exclude` match, or a repository outside a configured
+  `include` allow-list).
+- **`token`** — override the `ZIZMOR_SARIF_PAT` secret for an ad-hoc run.
+  When blank, the workflow uses the secret. **Caution:** GitHub stores and
+  shows `workflow_dispatch` inputs in the run parameters without masking
+  them, so prefer the secret for routine use and reserve this input for
+  testing.
+
+### Repository scope policy
+
+The `zizmor-sarif-publish.yaml` workflow reads its scope from
+[`.github/zizmor/scan-scope.json`](.github/zizmor/scan-scope.json), keyed
+by organisation. Each organisation provides four boolean scan toggles and
+two **glob** pattern lists:
+
+```json
+{
+  "organisations": {
+    "example-org": {
+      "scan_archived": false,
+      "scan_forks": false,
+      "scan_templates": true,
+      "scan_private": false,
+      "include": [],
+      "exclude": ["*-sandbox"]
+    }
+  }
+}
+```
+
+#### Scan toggles
+
+The toggles opt extra repository categories into the scan. Each defaults to
+`false`, so a bare configuration scans normal, active, public, first-party
+repositories.
+
+| Toggle           | When `true`                     |
+| ---------------- | ------------------------------- |
+| `scan_archived`  | also scan archived repositories |
+| `scan_forks`     | also scan forks                 |
+| `scan_templates` | also scan template repositories |
+| `scan_private`   | also scan private repositories  |
+
+The workflow skips a repository when one of its categories has the matching
+toggle off. It also skips disabled repositories, because GitHub blocks
+their checkout.
+
+#### Name patterns
+
+After the toggles, `include`/`exclude` globs filter by repository name:
+
+- **Case-insensitive globs** — patterns support `*` (any run), `?` (one
+  character), and `[..]` character classes; a pattern with no wildcards is
+  an exact name. Separator-aware patterns such as `*[-_./]test[-_./]*`
+  match a `test` path *segment* without catching names like `latest` or
+  `attestation`.
+- **`exclude`** — drops a repository whose name matches any exclude
+  pattern.
+- **`include`** — acts as an allow-list: a non-empty list keeps the
+  repositories matching at least one include pattern (`exclude` still
+  removes matches afterwards). An empty `include` list keeps every
+  repository.
+
+#### Run-time pattern variables
+
+Two optional repository variables extend the policy without editing the
+JSON, using the same glob syntax (values separated by commas, spaces, or
+newlines):
+
+- **`ZIZMOR_SCAN_INCLUDE`** — extra `include` (allow-list) patterns.
+- **`ZIZMOR_SCAN_EXCLUDE`** — extra `exclude` patterns.
+
+The workflow merges the variable patterns with the organisation's JSON
+lists before matching.
 
 ### Repository Audit Workflow
 
