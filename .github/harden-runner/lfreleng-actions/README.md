@@ -26,6 +26,7 @@ produced them.
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tuf-repo.github.com:443`                 | GitHub TUF trust root, fetched by `gh attestation verify` when checking the Sigstore provenance of the zizmor binary (zizmor security audit). |
 | `tmaproduction.blob.core.windows.net:443` | Azure blob storage that serves GitHub's artifact attestation bundles, fetched by `gh attestation verify` during the same provenance check.    |
+| `api.scorecard.dev:443`                   | OpenSSF Scorecard API, contacted by the scorecard scan/report workflows to publish project results (e.g. `github-security-report-action`).    |
 
 <!-- markdownlint-enable MD013 -->
 
