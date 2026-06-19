@@ -1,0 +1,318 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Organisation-wide zizmor SARIF publisher.
+#
+# The ruleset-enforced "Zizmor Scan" workflow (zizmor.yaml) runs only on
+# pull_request events for the targeted repositories, so it never uploads
+# SARIF to their default-branch code scanning -- organisation rulesets do
+# not deliver a post-merge push event to the target repositories. This
+# scheduled workflow closes that gap: every weekday it enumerates the
+# in-scope organisation repositories, runs the zizmor-scan-action against
+# each, and publishes the SARIF to that repository's code scanning via the
+# REST API. The default-branch code-scanning alerts (and anything built on
+# them, e.g. github-security-report-action) then reflect reality.
+#
+# Requires a PAT with cross-repo code-scanning write access. By default the
+# workflow reads the ZIZMOR_SARIF_PAT secret; a workflow_dispatch 'token'
+# input can override it for ad-hoc runs (note: dispatch inputs are stored and
+# shown in the run parameters, so prefer the secret for routine use). A
+# classic PAT needs the scopes: repo, read:org, security_events
+# (security_events grants the code-scanning write used by the SARIF upload).
+#
+# The target organisation defaults to the org this workflow runs in
+# (github.repository_owner); a workflow_dispatch 'org' input scans a
+# different organisation instead. See README.
+
+name: 'Zizmor SARIF Publish 🌈'
+
+# yamllint disable-line rule:truthy
+on:
+  schedule:
+    # Weekdays (Monday-Friday) at 06:00 UTC
+    - cron: '0 6 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      org:
+        # yamllint disable-line rule:line-length
+        description: 'Organisation to scan (name only); blank uses the org running this workflow'
+        required: false
+        default: ''
+      repo:
+        # yamllint disable-line rule:line-length
+        description: 'Scan only this repository (name only) if in scope; blank scans all'
+        required: false
+        default: ''
+      token:
+        # yamllint disable-line rule:line-length
+        description: 'PAT for cross-repo SARIF upload; blank falls back to the ZIZMOR_SARIF_PAT secret'
+        required: false
+        default: ''
+
+permissions: {}
+
+concurrency:
+  group: 'zizmor-sarif-publish'
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    name: 'Discover repositories'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+      count: ${{ steps.list.outputs.count }}
+      org: ${{ steps.list.outputs.org }}
+    steps:
+      # Load the egress allow-list out-of-band from lfreleng-actions/.github
+      # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@42663a22f7abe31521cbc6120901353a4b2849bc  # v0.2.0
+        with:
+          config: '@18d9c4446bea555d0783e850f6d295f844fe8f67'  # v0.1.1
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Checkout .github repository'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: 'Build in-scope repository matrix'
+        id: 'list'
+        shell: bash
+        env:
+          GH_TOKEN: '${{ inputs.token || secrets.ZIZMOR_SARIF_PAT }}'
+          ORG: '${{ inputs.org || github.repository_owner }}'
+          ONLY_REPO: '${{ inputs.repo }}'
+          EXTRA_INCLUDE: '${{ vars.ZIZMOR_SCAN_INCLUDE }}'
+          EXTRA_EXCLUDE: '${{ vars.ZIZMOR_SCAN_EXCLUDE }}'
+        run: |
+          # Build in-scope repository matrix
+          set -euo pipefail
+          echo "Target organisation: ${ORG}"
+
+          # Fail fast on a missing token rather than emitting an opaque auth
+          # error on the first API call. The default GITHUB_TOKEN cannot
+          # write code-scanning results to other repositories, so a
+          # dedicated PAT is required.
+          if [ -z "${GH_TOKEN}" ]; then
+            msg="No token available: set the ZIZMOR_SARIF_PAT secret or pass"
+            msg="${msg} the 'token' workflow_dispatch input"
+            echo "::error::${msg}" >&2
+            exit 1
+          fi
+
+          # Scope policy is data-driven, read from
+          # .github/zizmor/scan-scope.json (keyed by organisation). Per
+          # organisation it provides four boolean scan toggles plus include
+          # and exclude glob lists; the optional ZIZMOR_SCAN_INCLUDE /
+          # ZIZMOR_SCAN_EXCLUDE variables add patterns at run time (comma,
+          # space, or newline separated). Patterns are case-insensitive
+          # globs (*, ?, and [..] classes) matched against the repository
+          # name: when any include pattern is present a repository must
+          # match one to be in scope, and any matching exclude pattern
+          # removes it. The scan toggles (all default false) opt extra
+          # categories in -- archived, fork, template and private
+          # repositories are skipped unless their toggle is true. Disabled
+          # repositories are always skipped (GitHub blocks their checkout).
+          # An organisation absent from the file is governed by the toggle
+          # defaults and the variables alone.
+          config='.github/zizmor/scan-scope.json'
+          read_toggle() {
+            jq -r --arg o "${ORG}" --arg k "$1" \
+              '.organisations[$o][$k] // false' "${config}"
+          }
+          scan_archived="$(read_toggle scan_archived)"
+          scan_forks="$(read_toggle scan_forks)"
+          scan_templates="$(read_toggle scan_templates)"
+          scan_private="$(read_toggle scan_private)"
+          mapfile -t inc_json < <(jq -r --arg o "${ORG}" \
+            '.organisations[$o].include // [] | .[]' "${config}")
+          mapfile -t exc_json < <(jq -r --arg o "${ORG}" \
+            '.organisations[$o].exclude // [] | .[]' "${config}")
+          split_patterns() {
+            printf '%s' "$1" | tr ',' '\n' | tr -s '[:blank:]' '\n' \
+              | sed '/^$/d'
+          }
+          mapfile -t inc_var < <(split_patterns "${EXTRA_INCLUDE}")
+          mapfile -t exc_var < <(split_patterns "${EXTRA_EXCLUDE}")
+          includes=("${inc_json[@]}" "${inc_var[@]}")
+          excludes=("${exc_json[@]}" "${exc_var[@]}")
+
+          # Case-insensitive glob match of a name against any pattern.
+          shopt -s nocasematch
+          match_any() {
+            local name="$1"
+            shift
+            local pattern
+            for pattern in "$@"; do
+              [ -z "${pattern}" ] && continue
+              # shellcheck disable=SC2254  # intentional glob from config
+              case "${name}" in
+                ${pattern}) return 0 ;;
+              esac
+            done
+            return 1
+          }
+
+          if [ -n "${ONLY_REPO}" ]; then
+            # Manual single-repo run: fetch just that repository as a
+            # single JSON object.
+            repos_json="$(gh api "/repos/${ORG}/${ONLY_REPO}" \
+              --jq '{repo: .name, default_branch: .default_branch,
+                     archived: .archived, fork: .fork,
+                     is_template: .is_template, disabled: .disabled,
+                     private: .private}')"
+          else
+            # --paginate applies --jq to each page, so emit one object per
+            # line (a JSON stream). Wrapping in an array would print one
+            # array per page, concatenating into invalid JSON across pages.
+            repos_json="$(gh api --paginate \
+              -H 'Accept: application/vnd.github+json' \
+              "/orgs/${ORG}/repos?per_page=100" \
+              --jq '.[] | {repo: .name, default_branch: .default_branch,
+                           archived: .archived, fork: .fork,
+                           is_template: .is_template, disabled: .disabled,
+                           private: .private}')"
+          fi
+
+          # Apply the scan toggles then the include/exclude glob policy,
+          # collecting surviving repositories as name<TAB>default_branch.
+          selected=''
+          while IFS=$'\t' read -r name branch arch fork tmpl dis priv; do
+            [ -z "${name}" ] && continue
+            # Disabled repositories cannot be checked out; always skip.
+            [ "${dis}" = 'true' ] && continue
+            # Structural categories are opt-in via the scan toggles.
+            [ "${arch}" = 'true' ] && [ "${scan_archived}" != 'true' ] \
+              && continue
+            [ "${fork}" = 'true' ] && [ "${scan_forks}" != 'true' ] \
+              && continue
+            [ "${tmpl}" = 'true' ] && [ "${scan_templates}" != 'true' ] \
+              && continue
+            [ "${priv}" = 'true' ] && [ "${scan_private}" != 'true' ] \
+              && continue
+            if [ "${#includes[@]}" -gt 0 ]; then
+              match_any "${name}" "${includes[@]}" || continue
+            fi
+            if [ "${#excludes[@]}" -gt 0 ]; then
+              match_any "${name}" "${excludes[@]}" && continue
+            fi
+            selected+="${name}"$'\t'"${branch}"$'\n'
+          done < <(printf '%s' "${repos_json}" | jq -r \
+            '[.repo, .default_branch, .archived, .fork,
+              .is_template, .disabled, .private] | @tsv')
+
+          matrix="$(printf '%s' "${selected}" | jq -R -s -c \
+            'split("\n") | map(select(length > 0) | split("\t")
+                              | {repo: .[0], default_branch: .[1]})')"
+          count="$(printf '%s' "${matrix}" | jq 'length')"
+          echo "In-scope repositories: ${count}"
+          # GitHub Actions caps matrix expansion at 256 jobs. Fail early
+          # with guidance rather than silently covering only part of the
+          # organisation.
+          if [ "${count}" -gt 256 ]; then
+            msg="${count} in-scope repositories exceeds the GitHub Actions"
+            msg="${msg} matrix limit of 256; narrow scope via scan-scope.json"
+            msg="${msg} or the ZIZMOR_SCAN_INCLUDE / ZIZMOR_SCAN_EXCLUDE"
+            msg="${msg} variables"
+            echo "::error::${msg}" >&2
+            exit 1
+          fi
+          {
+            echo "matrix=${matrix}"
+            echo "count=${count}"
+            echo "org=${ORG}"
+          } >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: 'Publish SARIF (${{ matrix.repo }})'
+    needs: 'discover'
+    if: needs.discover.outputs.count != '0'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.matrix) }}
+    steps:
+      # Load the egress allow-list out-of-band from lfreleng-actions/.github
+      # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@42663a22f7abe31521cbc6120901353a4b2849bc  # v0.2.0
+        with:
+          config: '@18d9c4446bea555d0783e850f6d295f844fe8f67'  # v0.1.1
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Checkout repository under audit'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          repository: '${{ needs.discover.outputs.org }}/${{ matrix.repo }}'
+          ref: '${{ matrix.default_branch }}'
+          persist-credentials: false
+          token: '${{ inputs.token || secrets.ZIZMOR_SARIF_PAT }}'
+
+      - name: 'Run zizmor audit'
+        id: 'audit'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/zizmor-scan-action@cb80d31aa241207c718fb34f37282acaf8bb9bdb  # v0.1.1
+
+      - name: 'Publish SARIF to code scanning'
+        shell: bash
+        env:
+          GH_TOKEN: '${{ inputs.token || secrets.ZIZMOR_SARIF_PAT }}'
+          ORG: '${{ needs.discover.outputs.org }}'
+          REPO: '${{ matrix.repo }}'
+          DEFAULT_BRANCH: '${{ matrix.default_branch }}'
+          SARIF_FILE: '${{ steps.audit.outputs.sarif-file }}'
+        run: |
+          # Publish SARIF to code scanning
+          set -euo pipefail
+          # Upload against the default-branch HEAD so results land in the
+          # repository's default-branch code-scanning alert list (not a
+          # PR-scoped analysis). The SARIF is gzip + base64 per the API.
+          # The payload goes through a temp file and jq --rawfile so a large
+          # SARIF never lands on the jq command line (ARG_MAX).
+          sha="$(git rev-parse HEAD)"
+          payload_file="$(mktemp)"
+          trap 'rm -f "${payload_file}"' EXIT
+          gzip -c "${SARIF_FILE}" | base64 -w0 > "${payload_file}"
+          body="$(jq -n --arg sha "${sha}" \
+            --arg ref "refs/heads/${DEFAULT_BRANCH}" \
+            --rawfile sarif "${payload_file}" \
+            '{commit_sha: $sha, ref: $ref, sarif: $sarif}')"
+          for attempt in 1 2 3; do
+            if printf '%s' "${body}" | gh api --method POST \
+                 -H 'Accept: application/vnd.github+json' \
+                 "/repos/${ORG}/${REPO}/code-scanning/sarifs" --input -; then
+              echo "Published zizmor SARIF for ${ORG}/${REPO} @ ${sha}"
+              exit 0
+            fi
+            echo "::warning::SARIF upload attempt ${attempt} failed for ${REPO}"
+            sleep 5
+          done
+          echo "::error::failed to publish SARIF for ${REPO} after 3 tries" >&2
+          exit 1

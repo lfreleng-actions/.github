@@ -6,6 +6,7 @@ version = 1
 [[annotations]]
 path = [
      "excluded-repos.json",
+     ".github/zizmor/scan-scope.json",
      "LICENSE",
      ".github/harden-runner/**",
      ".github/python-audit/**"
