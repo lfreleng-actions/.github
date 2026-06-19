@@ -22,11 +22,14 @@ produced them.
 
 <!-- markdownlint-disable MD013 -->
 
-| Endpoint                                  | Source / reason                                                                                                                               |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tuf-repo.github.com:443`                 | GitHub TUF trust root, fetched by `gh attestation verify` when checking the Sigstore provenance of the zizmor binary (zizmor security audit). |
-| `tmaproduction.blob.core.windows.net:443` | Azure blob storage that serves GitHub's artifact attestation bundles, fetched by `gh attestation verify` during the same provenance check.    |
-| `api.scorecard.dev:443`                   | OpenSSF Scorecard API, contacted by the scorecard scan/report workflows to publish project results (e.g. `github-security-report-action`).    |
+| Endpoint                                         | Source / reason                                                                                                                               |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tuf-repo.github.com:443`                        | GitHub TUF trust root, fetched by `gh attestation verify` when checking the Sigstore provenance of the zizmor binary (zizmor security audit). |
+| `tmaproduction.blob.core.windows.net:443`        | Azure blob storage that serves GitHub's artifact attestation bundles, fetched by `gh attestation verify` during the same provenance check.    |
+| `api.scorecard.dev:443`                          | OpenSSF Scorecard API, contacted by the scorecard scan/report workflows to publish project results (e.g. `github-security-report-action`).    |
+| `api.osv.dev:443`                                | OSV vulnerability database API, queried by the OpenSSF Scorecard `Vulnerabilities` check to look up known vulnerabilities for dependencies.   |
+| `www.bestpractices.dev:443`                      | OpenSSF Best Practices badge service, queried by the Scorecard `CII-Best-Practices` check to read a project's best-practices badge status.    |
+| `oss-fuzz-build-logs.storage.googleapis.com:443` | OSS-Fuzz build-log bucket, queried by the Scorecard `Fuzzing` check to determine whether a project participates in OSS-Fuzz.                  |
 
 <!-- markdownlint-enable MD013 -->
 
