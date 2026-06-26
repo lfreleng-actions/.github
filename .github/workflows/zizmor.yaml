@@ -77,6 +77,14 @@ jobs:
       - name: 'Run zizmor audit'
         # yamllint disable-line rule:line-length
         uses: lfreleng-actions/zizmor-scan-action@cb80d31aa241207c718fb34f37282acaf8bb9bdb  # v0.1.1
+        with:
+          # Broad coverage with a sensible floor: the auditor persona
+          # surfaces the widest set of audits and a low severity floor
+          # reports findings down to the low tier (informational and
+          # unknown stay out to limit noise). Set explicitly so the breadth
+          # does not depend on the pinned action's defaults.
+          persona: 'auditor'
+          min-severity: 'low'
 
       - name: 'Upload SARIF artifact'
         # Only needed on default-branch pushes, where the upload job

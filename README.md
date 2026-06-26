@@ -97,9 +97,11 @@ and more.
   on PRs would publish unreviewed findings before reviewers approve
   the change. Findings appear in each repository's **Security → Code
   scanning** tab once the change lands on the default branch.
-- **Severity floor**: `medium` (the workflow filters out informational
-  and low findings to reduce noise).
-- **Persona**: `regular` (zizmor's default; high-signal, low-noise).
+- **Severity floor**: `low` (the workflow reports findings down to the
+  low tier; the informational and unknown tiers stay out to limit
+  noise).
+- **Persona**: `auditor` (the broadest persona; it runs the extra audit
+  types on top of the default high-signal set).
 - **Advisory**: zizmor exits `0` when emitting SARIF, so the workflow
   always reports success in the PR checks UI. Merge-blocking remains
   **disabled** at the workflow level on purpose. After the team
