@@ -55,6 +55,7 @@ with signed tags and provenance attestations.
 | [central-publish-action]       | Publish Maven artefacts to the Maven Central Portal       |
 | [maven-stage-prep-action]      | Prepare a Maven project for a staging release             |
 | [nexus-staging-action]         | Manage the Sonatype Nexus staging repository lifecycle    |
+| [node-create-npmrc-action]     | Create an NPM configuration file containing credentials   |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -149,6 +150,7 @@ with signed tags and provenance attestations.
 | [standalone-linting-action]        | Run linting tools that do not run under pre-commit.ci               |
 | [gha-workflow-linter]              | Lint and verify GitHub workflow/action calls                        |
 | [action-semantic-pull-request]     | Ensure PR titles match the Conventional Commits specification       |
+| [change-isolation-action]          | Verify a change isolates edits to gitignore-style path patterns     |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -179,12 +181,26 @@ with signed tags and provenance attestations.
 
 <!-- markdownlint-disable MD013 -->
 
-| Tool                          | Description                                                                |
-| ----------------------------- | -------------------------------------------------------------------------- |
-| [project-reporting-tool]      | Comprehensive multi-repository analysis tool for Linux Foundation projects |
-| [project-reporting-artifacts] | Generated reports and data artefacts from the Project Reporting Tool       |
-| [github-report]               | GitHub organisation posture reporting                                      |
-| [github-network-audit]        | Build harden-runner egress allowlists from StepSecurity endpoint data      |
+| Tool                            | Description                                                                |
+| ------------------------------- | -------------------------------------------------------------------------- |
+| [project-reporting-tool]        | Comprehensive multi-repository analysis tool for Linux Foundation projects |
+| [project-reporting-artifacts]   | Generated reports and data artefacts from the Project Reporting Tool       |
+| [github-report]                 | GitHub organisation posture reporting                                      |
+| [github-network-audit]          | Build harden-runner egress allowlists from StepSecurity endpoint data      |
+| [github-security-report-action] | Security and quality reporting across GitHub organisations                 |
+
+<!-- markdownlint-enable MD013 -->
+
+## 🔁 Workflow Repositories
+
+These repositories provide reusable GitHub workflows and example
+configurations that projects can call directly:
+
+<!-- markdownlint-disable MD013 -->
+
+| Repository         | Description                                                     |
+| ------------------ | --------------------------------------------------------------- |
+| [python-workflows] | Reusable build, test, and release workflows for Python projects |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -210,6 +226,7 @@ verify the actions and workflows in this organisation:
 | [test-release-process]              | End-to-end release workflow testing                     |
 | [test-tags-semantic]                | SemVer tag signature test fixtures                      |
 | [test-tags-calver]                  | CalVer tag signature test fixtures                      |
+| [github-releases-test-fixture]      | Frozen release fixture for github-list-releases-action  |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -363,6 +380,7 @@ to all repositories unless otherwise stated.
 [central-publish-action]: https://github.com/lfreleng-actions/central-publish-action
 [maven-stage-prep-action]: https://github.com/lfreleng-actions/maven-stage-prep-action
 [nexus-staging-action]: https://github.com/lfreleng-actions/nexus-staging-action
+[node-create-npmrc-action]: https://github.com/lfreleng-actions/node-create-npmrc-action
 
 <!-- Cloud & Infrastructure Actions -->
 [packer-build-action]: https://github.com/lfreleng-actions/packer-build-action
@@ -415,6 +433,7 @@ to all repositories unless otherwise stated.
 [standalone-linting-action]: https://github.com/lfreleng-actions/standalone-linting-action
 [gha-workflow-linter]: https://github.com/lfreleng-actions/gha-workflow-linter
 [action-semantic-pull-request]: https://github.com/lfreleng-actions/action-semantic-pull-request
+[change-isolation-action]: https://github.com/lfreleng-actions/change-isolation-action
 
 <!-- Utility Actions -->
 [git-configure-action]: https://github.com/lfreleng-actions/git-configure-action
@@ -437,6 +456,10 @@ to all repositories unless otherwise stated.
 [project-reporting-artifacts]: https://github.com/lfreleng-actions/project-reporting-artifacts
 [github-report]: https://github.com/lfreleng-actions/github-report
 [github-network-audit]: https://github.com/lfreleng-actions/github-network-audit
+[github-security-report-action]: https://github.com/lfreleng-actions/github-security-report-action
+
+<!-- Workflow Repositories -->
+[python-workflows]: https://github.com/lfreleng-actions/python-workflows
 
 <!-- Test Fixtures & Sample Projects -->
 [test-python-project]: https://github.com/lfreleng-actions/test-python-project
@@ -452,6 +475,7 @@ to all repositories unless otherwise stated.
 [test-release-process]: https://github.com/lfreleng-actions/test-release-process
 [test-tags-semantic]: https://github.com/lfreleng-actions/test-tags-semantic
 [test-tags-calver]: https://github.com/lfreleng-actions/test-tags-calver
+[github-releases-test-fixture]: https://github.com/lfreleng-actions/github-releases-test-fixture
 
 <!-- Organisation Resources -->
 [actions-template]: https://github.com/lfreleng-actions/actions-template
