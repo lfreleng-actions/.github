@@ -8,7 +8,8 @@
 # organisation as a "required workflow" via an organisation ruleset
 # (Settings -> Rules -> Rulesets at the org level), so it executes on
 # every selected repository without a per-repository file. It also
-# audits this repository on its own pull requests and pushes.
+# audits this repository on demand (workflow_dispatch) and on its
+# own pull requests.
 #
 # The audit logic lives in the lfreleng-actions/zizmor-scan-action
 # composite action, pinned by commit SHA below. The action reads its
@@ -17,9 +18,11 @@
 # ecosystem keeps the pinned action SHA current here.
 #
 # Mode: SARIF, advisory (zizmor exits 0, so this does not block merges).
-# The audit job runs with contents: read; SARIF upload runs in a
-# separate job holding security-events: write, gated to default-branch
-# pushes.
+# This workflow is advisory only and does NOT publish to code scanning.
+# The scheduled zizmor-sarif-publish.yaml workflow is the single source
+# of default-branch code-scanning SARIF for every repository. Publishing
+# from here as well would create a second, competing zizmor analysis
+# lineage that GitHub cannot reconcile, leaving stale alerts open.
 #
 # See README.md ("Organisation-wide zizmor audit") for org-admin setup.
 
@@ -29,7 +32,6 @@ name: 'Zizmor Scan 🌈'
 on:
   workflow_dispatch:
   pull_request:
-  push:
 
 permissions: {}
 
@@ -40,12 +42,6 @@ concurrency:
 jobs:
   audit:
     name: 'Audit Workflows'
-    # Skip pushes to non-default branches and tags: the SARIF upload is
-    # gated to default-branch pushes, so those events produce no useful
-    # output. Pull request and workflow_dispatch events still run.
-    if: >-
-      github.event_name != 'push'
-      || github.ref_name == github.event.repository.default_branch
     runs-on: 'ubuntu-latest'
     timeout-minutes: 10
     permissions:
@@ -85,67 +81,3 @@ jobs:
           # does not depend on the pinned action's defaults.
           persona: 'auditor'
           min-severity: 'low'
-
-      - name: 'Upload SARIF artifact'
-        # Only needed on default-branch pushes, where the upload job
-        # consumes it; PR and dispatch runs skip the upload entirely, so
-        # there is no point producing the artifact for them.
-        if: >-
-          github.event_name == 'push'
-          && github.ref_name == github.event.repository.default_branch
-        # yamllint disable-line rule:line-length
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: 'zizmor-sarif'
-          path: '${{ github.workspace }}/zizmor.sarif'
-          retention-days: 5
-          if-no-files-found: 'error'
-
-  upload:
-    name: 'Publish SARIF'
-    needs: 'audit'
-    if: >-
-      github.event_name == 'push'
-      && github.ref_name == github.event.repository.default_branch
-    runs-on: 'ubuntu-latest'
-    timeout-minutes: 5
-    permissions:
-      # Required to publish results to the code scanning dashboard.
-      security-events: write
-      # Lets upload-sarif read workflow run information on private
-      # repositories (harmless on public ones).
-      actions: read
-    steps:
-      # Load the egress allow-list out-of-band from
-      # lfreleng-actions/.github and publish it as
-      # $CONNECTION_ALLOW_LIST for the harden-runner step below.
-      # yamllint disable-line rule:line-length
-      - uses: lfreleng-actions/harden-runner-block-action@42663a22f7abe31521cbc6120901353a4b2849bc  # v0.2.0
-        with:
-          config: '@18d9c4446bea555d0783e850f6d295f844fe8f67'  # v0.1.1
-
-      # Harden the runner with the just-loaded allow-list.
-      - name: 'Harden runner (block)'
-        # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
-        with:
-          egress-policy: 'block'
-          allowed-endpoints: >
-            ${{ env.CONNECTION_ALLOW_LIST }}
-
-      - name: 'Download SARIF artifact'
-        # yamllint disable-line rule:line-length
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          name: 'zizmor-sarif'
-          path: '.'
-
-      - name: 'Upload SARIF to code scanning'
-        # yamllint disable-line rule:line-length
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
-        with:
-          sarif_file: 'zizmor.sarif'
-          # Category groups these results in code scanning and matches
-          # the README org-setup instructions.
-          category: 'zizmor'
-        continue-on-error: true
