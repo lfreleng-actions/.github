@@ -14,9 +14,17 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   repo-audit:
     name: 'Check for Undocumented Repositories'
+    # Run this job in a dedicated environment so its execution and any
+    # environment-scoped secrets can be gated by environment protection
+    # rules (satisfies zizmor's secrets-outside-env).
+    environment: 'production'
     permissions:
       contents: read
     runs-on: 'ubuntu-latest'
@@ -42,6 +50,8 @@ jobs:
       - name: 'Checkout repository'
         # yamllint disable-line rule:line-length
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: 'Fetch organisation repositories'
         id: 'fetch-repos'
@@ -90,7 +100,7 @@ jobs:
           echo "Documented repositories: $(echo "$DOCUMENTED" | wc -l)"
 
           # Get the full repo list from the previous step
-          ALL_REPOS="${{ steps.fetch-repos.outputs.repos }}"
+          ALL_REPOS="${FETCHED_REPOS}"
 
           # Find undocumented repos (not in README and not excluded)
           UNDOCUMENTED=""
@@ -165,6 +175,8 @@ jobs:
               echo "\`excluded-repos.json\`."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          FETCHED_REPOS: ${{ steps.fetch-repos.outputs.repos }}
 
       - name: 'Send Slack notification (updates needed)'
         if: steps.compare.outputs.notify == 'true'

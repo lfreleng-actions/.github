@@ -29,6 +29,4 @@ jobs:
     uses: lfit/releng-reusable-workflows/.github/workflows/reuse-semantic-pull-request.yaml@f412e6f89527da7611a5f4a5f861de86d98d3e9e  # v0.7.0
     permissions:
       contents: read
-      # The called workflow's token is capped by the caller; without this the
-      # gate step's PR API calls fail with 403 on minimal-permission repos.
-      pull-requests: read
+      pull-requests: read  # Gate step queries the PR API (avoids 403)

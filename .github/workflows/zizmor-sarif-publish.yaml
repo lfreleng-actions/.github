@@ -61,6 +61,10 @@ jobs:
     name: 'Discover repositories'
     runs-on: 'ubuntu-latest'
     timeout-minutes: 5
+    # Run this job in a dedicated environment so its execution and any
+    # environment-scoped secrets can be gated by environment protection
+    # rules (satisfies zizmor's secrets-outside-env).
+    environment: 'production'
     permissions:
       contents: read
     outputs:
@@ -243,6 +247,10 @@ jobs:
     if: needs.discover.outputs.count != '0'
     runs-on: 'ubuntu-latest'
     timeout-minutes: 10
+    # Run this job in a dedicated environment so its execution and any
+    # environment-scoped secrets can be gated by environment protection
+    # rules (satisfies zizmor's secrets-outside-env).
+    environment: 'production'
     permissions:
       contents: read
     strategy:
