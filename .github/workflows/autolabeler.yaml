@@ -80,8 +80,7 @@ jobs:
     #    PR head source
     # 4. pull_request_target is needed ONLY for autolabeling fork PRs
     permissions:
-      # write permission is required for autolabeler
-      pull-requests: write
+      pull-requests: write  # Autolabeler applies labels to pull requests
       # read is sufficient; autolabeler does not create releases
       contents: read
     runs-on: 'ubuntu-latest'
