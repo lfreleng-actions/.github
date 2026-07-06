@@ -17,10 +17,15 @@
 # workflow embeds no version string; Dependabot's github-actions
 # ecosystem keeps the pinned action SHA current here.
 #
-# Mode: SARIF, advisory (zizmor exits 0, so this does not block merges).
-# This workflow is advisory only and does NOT publish to code scanning.
-# The scheduled zizmor-sarif-publish.yaml workflow is the single source
-# of default-branch code-scanning SARIF for every repository. Publishing
+# Mode: SARIF. zizmor itself exits 0 in SARIF mode (exit codes 11+ are
+# suppressed for SARIF consumers), so a dedicated gate step evaluates the
+# report and fails the run when it holds any finding at low severity or
+# higher. Informational findings are tolerated for now, as several
+# repositories have yet to resolve theirs.
+#
+# This workflow does NOT publish to code scanning. The scheduled
+# zizmor-sarif-publish.yaml workflow is the single source of
+# default-branch code-scanning SARIF for every repository. Publishing
 # from here as well would create a second, competing zizmor analysis
 # lineage that GitHub cannot reconcile, leaving stale alerts open.
 #
@@ -71,6 +76,7 @@ jobs:
           persist-credentials: false
 
       - name: 'Run zizmor audit'
+        id: 'audit'
         # yamllint disable-line rule:line-length
         uses: lfreleng-actions/zizmor-scan-action@81b151507f66b40b3dbf8c76eb616040622f7342  # v0.3.0
         with:
@@ -81,3 +87,48 @@ jobs:
           # does not depend on the pinned action's defaults.
           persona: 'auditor'
           min-severity: 'low'
+
+      - name: 'Fail on findings (low severity or higher)'
+        shell: 'bash'
+        env:
+          ZIZMOR_SARIF: ${{ steps.audit.outputs['sarif-file'] }}
+        run: |
+          set -euo pipefail
+          # zizmor maps severities onto SARIF levels: error=High,
+          # warning=Medium, note=Low, none=Info. Fail the run on any
+          # low-or-higher finding while tolerating Info-level findings,
+          # which several repositories have yet to resolve.
+          if [ ! -f "${ZIZMOR_SARIF}" ]; then
+            echo "::error::zizmor SARIF report not found: ${ZIZMOR_SARIF}"
+            exit 1
+          fi
+          # The Python lines below sit at the block scalar base
+          # indentation: YAML strips it, so Python receives module-level
+          # code at column 0. Do not re-indent them.
+          n="$(python3 -c '
+          import json, os
+          BLOCK = {"error", "warning", "note"}
+          path = os.environ["ZIZMOR_SARIF"]
+          with open(path, encoding="utf-8") as fh:
+              data = json.load(fh)
+          count = 0
+          for run in data.get("runs", []):
+              drv = run.get("tool", {}).get("driver", {})
+              cfg = {}
+              for rule in drv.get("rules", []):
+                  dc = rule.get("defaultConfiguration", {})
+                  cfg[rule.get("id", "")] = dc.get("level", "warning")
+              for res in run.get("results", []):
+                  lvl = res.get("level")
+                  if not lvl:
+                      lvl = cfg.get(res.get("ruleId", ""), "warning")
+                  if lvl in BLOCK:
+                      count += 1
+          print(count)
+          ')"
+          echo "zizmor reported ${n} finding(s) at low severity or higher"
+          if [ "${n}" -gt 0 ]; then
+            echo "::error::zizmor: ${n} finding(s) at low severity or higher"
+            exit 1
+          fi
+          echo 'No low-or-higher findings; passing.'
