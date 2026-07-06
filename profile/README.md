@@ -21,20 +21,25 @@ with signed tags and provenance attestations.
 
 <!-- markdownlint-disable MD013 -->
 
-| Action                        | Description                                                  |
-| ----------------------------- | ------------------------------------------------------------ |
-| [python-build-action]         | Build a Python project                                       |
-| [python-test-action]          | Test a Python project and generate coverage reports          |
-| [python-audit-action]         | Audit Python dependencies for known security vulnerabilities |
-| [python-twine-check-action]   | Verify Python build artefacts with Twine before publishing   |
-| [python-notebook-test-action] | Check Jupyter Notebooks with pytest and nbmake               |
-| [python-sbom-action]          | Generate CycloneDX SBOM reports for Python projects          |
-| [tox-run-action]              | Run tox with specified Python version and environments       |
-| [gradle-build-action]         | Set up a specific JDK version and run a Gradle build         |
-| [maven-build-action]          | Set up Maven and build a Java project                        |
-| [maven-make-build-action]     | Set up Maven and run make                                    |
-| [node-build-action]           | Set up Node.js and build a project with npm or yarn          |
-| [make-action]                 | Execute the steps described in a Makefile                    |
+| Action                        | Description                                                   |
+| ----------------------------- | ------------------------------------------------------------- |
+| [python-build-action]         | Build a Python project                                        |
+| [python-test-action]          | Test a Python project and generate coverage reports           |
+| [python-audit-action]         | Audit Python dependencies for known security vulnerabilities  |
+| [python-twine-check-action]   | Verify Python build artefacts with Twine before publishing    |
+| [python-notebook-test-action] | Check Jupyter Notebooks with pytest and nbmake                |
+| [python-sbom-action]          | Generate CycloneDX SBOM reports for Python projects           |
+| [tox-run-action]              | Run tox with specified Python version and environments        |
+| [gradle-build-action]         | Set up a specific JDK version and run a Gradle build          |
+| [maven-build-action]          | Set up Maven and build a Java project                         |
+| [maven-make-build-action]     | Set up Maven and run make                                     |
+| [node-build-action]           | Set up Node.js and build a project with npm or yarn           |
+| [node-audit-action]           | Audit Node.js dependencies for known security vulnerabilities |
+| [go-build-action]             | Build a Go project with optional cross-compilation support    |
+| [go-test-action]              | Run Go tests with coverage and race detection support         |
+| [go-audit-action]             | Audit a Go project with govulncheck, gosec, and staticcheck   |
+| [sbom-action]                 | Generate CycloneDX SBOM reports for any language ecosystem    |
+| [make-action]                 | Execute the steps described in a Makefile                     |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -42,20 +47,21 @@ with signed tags and provenance attestations.
 
 <!-- markdownlint-disable MD013 -->
 
-| Action                         | Description                                               |
-| ------------------------------ | --------------------------------------------------------- |
-| [pypi-publish-action]          | Publish a Python project to PyPI                          |
-| [pypi-version-check-action]    | Check PyPI for a given package and optional build/release |
-| [draft-release-promote-action] | Promote a draft GitHub release to a full release          |
-| [release-assets-action]        | Upload build artefacts and assets to a GitHub release     |
-| [nexus-publish-action]         | Publish content to Sonatype Nexus Repository servers      |
-| [nexus-docker-login-action]    | Docker login for all registries in Nexus3 and DockerHub   |
-| [helm-chart-publish-action]    | Publish Helm Charts to an OCI container repository        |
-| [chartmuseum-action]           | Start and run a ChartMuseum Helm Chart repository         |
-| [central-publish-action]       | Publish Maven artefacts to the Maven Central Portal       |
-| [maven-stage-prep-action]      | Prepare a Maven project for a staging release             |
-| [nexus-staging-action]         | Manage the Sonatype Nexus staging repository lifecycle    |
-| [node-create-npmrc-action]     | Create an NPM configuration file containing credentials   |
+| Action                         | Description                                                 |
+| ------------------------------ | ----------------------------------------------------------- |
+| [pypi-publish-action]          | Publish a Python project to PyPI                            |
+| [pypi-version-check-action]    | Check PyPI for a given package and optional build/release   |
+| [draft-release-promote-action] | Promote a draft GitHub release to a full release            |
+| [release-assets-action]        | Upload build artefacts and assets to a GitHub release       |
+| [nexus-publish-action]         | Publish content to Sonatype Nexus Repository servers        |
+| [nexus-docker-login-action]    | Docker login for all registries in Nexus3 and DockerHub     |
+| [helm-chart-publish-action]    | Publish Helm Charts to an OCI container repository          |
+| [chartmuseum-action]           | Start and run a ChartMuseum Helm Chart repository           |
+| [central-publish-action]       | Publish Maven artefacts to the Maven Central Portal         |
+| [maven-stage-prep-action]      | Prepare a Maven project for a staging release               |
+| [nexus-staging-action]         | Manage the Sonatype Nexus staging repository lifecycle      |
+| [node-create-npmrc-action]     | Create an NPM configuration file containing credentials     |
+| [node-publish-action]          | Stamp a version and publish a Node.js package to a registry |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -198,9 +204,11 @@ configurations that projects can call directly:
 
 <!-- markdownlint-disable MD013 -->
 
-| Repository         | Description                                                     |
-| ------------------ | --------------------------------------------------------------- |
-| [python-workflows] | Reusable build, test, and release workflows for Python projects |
+| Repository         | Description                                                             |
+| ------------------ | ----------------------------------------------------------------------- |
+| [python-workflows] | Reusable build, test, and release workflows for Python projects         |
+| [go-workflows]     | Reusable build, test, and release workflows for Go projects             |
+| [node-workflows]   | Reusable build, test, audit, and release workflows for Node.js projects |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -237,6 +245,7 @@ verify the actions and workflows in this organisation:
 | Repository                  | Purpose                                                                                                |
 | --------------------------- | ------------------------------------------------------------------------------------------------------ |
 | [actions-template]          | Template repository for creating new GitHub Actions                                                    |
+| [workflows-template]        | Template repository for creating reusable workflow repositories                                        |
 | [.github]                   | Organisation-wide configuration (default community health files, shared release-drafter configuration) |
 | [releng-reusable-workflows] | Shared/common workflows leveraging these actions (hosted in the [lfit](https://github.com/lfit) org)   |
 
@@ -366,6 +375,11 @@ to all repositories unless otherwise stated.
 [maven-build-action]: https://github.com/lfreleng-actions/maven-build-action
 [maven-make-build-action]: https://github.com/lfreleng-actions/maven-make-build-action
 [node-build-action]: https://github.com/lfreleng-actions/node-build-action
+[node-audit-action]: https://github.com/lfreleng-actions/node-audit-action
+[go-build-action]: https://github.com/lfreleng-actions/go-build-action
+[go-test-action]: https://github.com/lfreleng-actions/go-test-action
+[go-audit-action]: https://github.com/lfreleng-actions/go-audit-action
+[sbom-action]: https://github.com/lfreleng-actions/sbom-action
 [make-action]: https://github.com/lfreleng-actions/make-action
 
 <!-- Publishing & Release Actions -->
@@ -381,6 +395,7 @@ to all repositories unless otherwise stated.
 [maven-stage-prep-action]: https://github.com/lfreleng-actions/maven-stage-prep-action
 [nexus-staging-action]: https://github.com/lfreleng-actions/nexus-staging-action
 [node-create-npmrc-action]: https://github.com/lfreleng-actions/node-create-npmrc-action
+[node-publish-action]: https://github.com/lfreleng-actions/node-publish-action
 
 <!-- Cloud & Infrastructure Actions -->
 [packer-build-action]: https://github.com/lfreleng-actions/packer-build-action
@@ -460,6 +475,8 @@ to all repositories unless otherwise stated.
 
 <!-- Workflow Repositories -->
 [python-workflows]: https://github.com/lfreleng-actions/python-workflows
+[go-workflows]: https://github.com/lfreleng-actions/go-workflows
+[node-workflows]: https://github.com/lfreleng-actions/node-workflows
 
 <!-- Test Fixtures & Sample Projects -->
 [test-python-project]: https://github.com/lfreleng-actions/test-python-project
@@ -479,6 +496,7 @@ to all repositories unless otherwise stated.
 
 <!-- Organisation Resources -->
 [actions-template]: https://github.com/lfreleng-actions/actions-template
+[workflows-template]: https://github.com/lfreleng-actions/workflows-template
 [.github]: https://github.com/lfreleng-actions/.github
 [releng-reusable-workflows]: https://github.com/lfit/releng-reusable-workflows
 
