@@ -2,52 +2,41 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 The Linux Foundation
 
-# Organisation-wide zizmor SARIF publisher.
+# Organisation-wide aislop SARIF publisher.
 #
-# The ruleset-enforced "Zizmor Scan" workflow (zizmor.yaml) runs only on
-# pull_request events for the targeted repositories, so it never uploads
-# SARIF to their default-branch code scanning -- organisation rulesets do
-# not deliver a post-merge push event to the target repositories. This
-# scheduled workflow closes that gap: every weekday it enumerates the
-# in-scope organisation repositories (via the shared
-# repo-discovery.yaml workflow reading .github/scan-scope.json),
-# runs the zizmor-scan-action against
-# each, and publishes the SARIF to that repository's code scanning via the
-# REST API. The default-branch code-scanning alerts (and anything built on
-# them, e.g. github-security-report-action) then reflect reality. A final
-# job renders the complete organisation posture (every repository with
-# findings, untruncated, worst-first) to the run's step summary.
+# The ruleset-enforced "AI Slop Scan" workflow (aislop.yaml) runs only
+# on pull_request events for the targeted repositories and scans only
+# the changed files, so it never uploads whole-repository SARIF to
+# their default-branch code scanning -- organisation rulesets do not
+# deliver a post-merge push event to the target repositories. This
+# scheduled workflow closes that gap: every day it enumerates the
+# in-scope organisation repositories (the same scope as the zizmor
+# publisher, via the shared repo-discovery.yaml workflow reading
+# .github/scan-scope.json), runs a full aislop scan against each via
+# aislop-scan-action (which pins and verifies the aislop CLI), and
+# publishes the SARIF to that repository's code scanning via the REST
+# API. A final aggregation job renders a ranked score table across the
+# organisation so the worst offenders are easy to spot.
 #
-# Requires a PAT with cross-repo code-scanning write access. By default the
-# workflow reads the ZIZMOR_SARIF_PAT secret; a workflow_dispatch 'token'
-# input can override it for ad-hoc runs (note: dispatch inputs are stored and
-# shown in the run parameters, so prefer the secret for routine use). A
-# classic PAT needs the scopes: repo, read:org, security_events
-# (security_events grants the code-scanning write used by the SARIF upload).
-#
-# Analysis lineage: code scanning groups analyses into sets keyed by
-# (ref, tool, category, analysis key) and an alert only closes when the
-# most recent analysis of EVERY set that reported it comes back clean.
-# A set that stops receiving uploads therefore pins its alerts open
-# forever (this bit us: alerts from a retired per-repo upload job
-# stayed open after publishing moved here). To keep the lineage stable
-# and explicit, the publish step stamps the SARIF run's
-# automationDetails.id ('zizmor') before upload -- the REST API derives
-# the analysis category from that field. Do not change or remove the
-# stamp without migrating: publish under the new category first, then
-# delete the superseded analysis sets in every repository.
+# Requires a PAT with cross-repo code-scanning write access, read
+# from the AISLOP_SARIF_PAT secret; a workflow_dispatch 'token' input
+# can override it for ad-hoc runs (note: dispatch inputs are stored
+# and shown in the run parameters, so prefer the secret for routine
+# use). A classic PAT needs the scopes: repo,
+# read:org, security_events (security_events grants the code-scanning
+# write used by the SARIF upload).
 #
 # The target organisation defaults to the org this workflow runs in
 # (github.repository_owner); a workflow_dispatch 'org' input scans a
 # different organisation instead. See README.
 
-name: 'Zizmor SARIF Publish 🌈'
+name: 'AI Slop SARIF Publish 🧹'
 
 # yamllint disable-line rule:truthy
 on:
   schedule:
-    # Weekdays (Monday-Friday) at 06:00 UTC
-    - cron: '0 6 * * 1-5'
+    # Daily at 07:00 UTC (offset from the zizmor publisher at 06:00)
+    - cron: '0 7 * * *'
   workflow_dispatch:
     inputs:
       org:
@@ -62,14 +51,14 @@ on:
         default: ''
       token:
         # yamllint disable-line rule:line-length
-        description: 'PAT for cross-repo SARIF upload; blank falls back to the ZIZMOR_SARIF_PAT secret'
+        description: 'PAT for cross-repo SARIF upload; blank falls back to the AISLOP_SARIF_PAT secret'
         required: false
         default: ''
 
 permissions: {}
 
 concurrency:
-  group: 'zizmor-sarif-publish'
+  group: 'aislop-sarif-publish'
   cancel-in-progress: false
 
 jobs:
@@ -77,24 +66,21 @@ jobs:
     name: 'Discover repositories'
     permissions:
       contents: read
-    # Shared with the aislop publisher so both scanners always cover
-    # the same repository selection (scope policy read from
-    # .github/scan-scope.json).
     uses: './.github/workflows/repo-discovery.yaml'
     with:
       org: '${{ inputs.org || github.repository_owner }}'
       only-repo: '${{ inputs.repo }}'
-      extra-include: '${{ vars.ZIZMOR_SCAN_INCLUDE }}'
-      extra-exclude: '${{ vars.ZIZMOR_SCAN_EXCLUDE }}'
+      extra-include: '${{ vars.AISLOP_SCAN_INCLUDE }}'
+      extra-exclude: '${{ vars.AISLOP_SCAN_EXCLUDE }}'
     secrets:
-      token: '${{ inputs.token || secrets.ZIZMOR_SARIF_PAT }}'
+      token: '${{ inputs.token || secrets.AISLOP_SARIF_PAT }}'
 
   publish:
     name: 'Publish SARIF (${{ matrix.repo }})'
     needs: 'discover'
     if: needs.discover.outputs.count != '0'
     runs-on: 'ubuntu-latest'
-    timeout-minutes: 10
+    timeout-minutes: 15
     # Run this job in a dedicated environment so its execution and any
     # environment-scoped secrets can be gated by environment protection
     # rules (satisfies zizmor's secrets-outside-env).
@@ -112,7 +98,7 @@ jobs:
       # yamllint disable-line rule:line-length
       - uses: lfreleng-actions/harden-runner-block-action@6db537b3e6d060c3287c5a3ce2c28b55b0af330d  # v0.2.1
         with:
-          config: '@18d9c4446bea555d0783e850f6d295f844fe8f67'  # v0.1.1
+          config: '@807a544b7e55a9224b2b3780e636467bd4b5b99b'  # v0.5.0
 
       - name: 'Harden runner (block)'
         # yamllint disable-line rule:line-length
@@ -129,38 +115,66 @@ jobs:
           repository: '${{ needs.discover.outputs.org }}/${{ matrix.repo }}'
           ref: '${{ matrix.default_branch }}'
           persist-credentials: false
-          token: '${{ inputs.token || secrets.ZIZMOR_SARIF_PAT }}'
+          token: '${{ inputs.token || secrets.AISLOP_SARIF_PAT }}'
 
-      - name: 'Run zizmor audit'
-        id: 'audit'
+      - name: 'Resolve audited commit'
+        id: 'head'
+        shell: bash
+        run: |
+          # Resolve audited commit
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: 'Run aislop scan (full repository)'
+        id: 'scan'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/zizmor-scan-action@d88da3d4dce965721cd410013ed8d628d852b61f  # v0.3.2
+        uses: lfreleng-actions/aislop-scan-action@f990c967bc1cbbd3348cdf4ed450b4523657f123  # v0.2.0
         with:
-          # Broad coverage with a sensible floor: the auditor persona
-          # surfaces the widest set of audits and a low severity floor
-          # reports findings down to the low tier (informational and
-          # unknown stay out to limit noise). Set explicitly so the breadth
-          # does not depend on the pinned action's defaults.
-          #
-          # Keep these settings identical to the ruleset-enforced PR gate
-          # (zizmor.yaml): the gate blocks on SARIF level note-and-above,
-          # and consumers of the published SARIF (e.g. the
-          # github-security-report tool) decode note as Low. Both only
-          # hold while the floor is 'low', because zizmor emits Low AND
-          # Informational findings at SARIF level note: lowering the
-          # floor to 'informational' would let informational findings
-          # into the SARIF where they are indistinguishable from Low.
-          persona: 'auditor'
-          min-severity: 'low'
+          scan-mode: 'full'
+          # This workflow publishes results, it does not gate: the
+          # action reports findings via its exit-code output without
+          # failing the job, and no annotations should land on the
+          # .github repository running this matrix.
+          annotate: 'false'
+          # Label the step summary with the repository under audit
+          # rather than the .github repository running this workflow.
+          # yamllint disable-line rule:line-length
+          summary-repository: '${{ needs.discover.outputs.org }}/${{ matrix.repo }}'
+          summary-sha: '${{ steps.head.outputs.sha }}'
+
+      - name: 'Write score metrics for aggregation'
+        shell: bash
+        env:
+          REPO: '${{ matrix.repo }}'
+          REPORT_FILE: '${{ steps.scan.outputs.report-file }}'
+        run: |
+          # Write score metrics for aggregation
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/aislop-metrics"
+          jq -c --arg repo "${REPO}" \
+            '{repo: $repo, score: .score, label: .label,
+              scoreable: .scoreable, errors: .summary.errors,
+              warnings: .summary.warnings, fixable: .summary.fixable,
+              files: .summary.files}' \
+            "${REPORT_FILE}" > "${RUNNER_TEMP}/aislop-metrics/${REPO}.json"
+
+      - name: 'Upload score metrics artifact'
+        # yamllint disable-line rule:line-length
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: 'aislop-metrics-${{ matrix.repo }}'
+          path: '${{ runner.temp }}/aislop-metrics/'
+          retention-days: 7
 
       - name: 'Publish SARIF to code scanning'
         shell: bash
         env:
-          GH_TOKEN: '${{ inputs.token || secrets.ZIZMOR_SARIF_PAT }}'
+          GH_TOKEN: '${{ inputs.token || secrets.AISLOP_SARIF_PAT }}'
           ORG: '${{ needs.discover.outputs.org }}'
           REPO: '${{ matrix.repo }}'
           DEFAULT_BRANCH: '${{ matrix.default_branch }}'
-          SARIF_FILE: '${{ steps.audit.outputs.sarif-file }}'
+          SARIF_FILE: '${{ steps.scan.outputs.sarif-file }}'
+          HEAD_SHA: '${{ steps.head.outputs.sha }}'
         run: |
           # Publish SARIF to code scanning
           set -euo pipefail
@@ -169,29 +183,28 @@ jobs:
           # PR-scoped analysis). The SARIF is gzip + base64 per the API.
           # The payload goes through a temp file and jq --rawfile so a large
           # SARIF never lands on the jq command line (ARG_MAX).
-          sha="$(git rev-parse HEAD)"
           payload_file="$(mktemp)"
           stamped_file="$(mktemp)"
           trap 'rm -f "${payload_file}" "${stamped_file}"' EXIT
           # Stamp a stable analysis category (the run's
           # automationDetails.id) so every upload lands in one explicit
-          # lineage; see the header comment for the migration required
-          # if this ever changes. Set only the id so any other
-          # automationDetails fields a future zizmor emits survive.
-          jq '.runs[].automationDetails.id = "zizmor"' \
+          # lineage, mirroring the zizmor publisher. Set only the id so
+          # any other automationDetails fields a future aislop emits
+          # survive.
+          jq '.runs[].automationDetails.id = "aislop"' \
             "${SARIF_FILE}" > "${stamped_file}"
           # Guard against the stamp silently becoming a no-op (for
           # example an unexpected SARIF shape with no runs array): a
-          # categoryless upload would reintroduce the implicit-lineage
-          # problem this stamp exists to prevent.
+          # categoryless upload would scatter results across implicit
+          # lineages.
           if ! jq -e '(.runs | type == "array" and length > 0)
-                      and all(.runs[]; .automationDetails.id == "zizmor")' \
+                      and all(.runs[]; .automationDetails.id == "aislop")' \
                "${stamped_file}" > /dev/null; then
             echo "::error::SARIF category stamp failed for ${REPO}" >&2
             exit 1
           fi
           gzip -c "${stamped_file}" | base64 -w0 > "${payload_file}"
-          body="$(jq -n --arg sha "${sha}" \
+          body="$(jq -n --arg sha "${HEAD_SHA}" \
             --arg ref "refs/heads/${DEFAULT_BRANCH}" \
             --rawfile sarif "${payload_file}" \
             '{commit_sha: $sha, ref: $ref, sarif: $sarif}')"
@@ -216,11 +229,11 @@ jobs:
             echo "::error::no SARIF id in upload response for ${REPO}" >&2
             exit 1
           fi
-          echo "Published zizmor SARIF for ${ORG}/${REPO} @ ${sha}"
+          echo "Published aislop SARIF for ${ORG}/${REPO} @ ${HEAD_SHA}"
           # Wait for code scanning to finish processing the upload so
-          # the run only succeeds once alert state is committed (the
-          # posture summary job reads it) and silent SARIF rejections
-          # surface here as failures instead of vanishing.
+          # the run only succeeds once alert state is committed and
+          # silent SARIF rejections surface here as failures instead
+          # of vanishing.
           for _ in $(seq 1 30); do
             # A failed status read logs its error (visible in the job
             # log for diagnosis) and retries as pending.
@@ -245,32 +258,24 @@ jobs:
           echo "::error::SARIF processing timed out for ${REPO}" >&2
           exit 1
 
-  summarise:
-    name: 'Organisation posture summary'
-    needs: ['discover', 'publish']
-    # Render the summary even when some publish jobs fail: a partial
-    # posture with the failures called out beats no posture at all. The
-    # summary script itself fails the job if any repository's alerts
-    # cannot be read, so an incomplete table never looks complete.
-    if: >-
-      ${{ always()
-      && needs.discover.result == 'success'
-      && needs.discover.outputs.count != '0' }}
+  aggregate:
+    name: 'Aggregate organisation scores'
+    needs:
+      - 'discover'
+      - 'publish'
+    # Render the ranked table even when individual repositories failed
+    # to publish; partial data still shows where to focus attention.
+    if: always() && needs.discover.outputs.count != '0'
     runs-on: 'ubuntu-latest'
-    timeout-minutes: 15
-    # Run this job in a dedicated environment so its execution and any
-    # environment-scoped secrets can be gated by environment protection
-    # rules (satisfies zizmor's secrets-outside-env).
-    environment: 'production'
-    permissions:
-      contents: read
+    timeout-minutes: 5
+    permissions: {}
     steps:
       # Load the egress allow-list out-of-band from lfreleng-actions/.github
       # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
       # yamllint disable-line rule:line-length
       - uses: lfreleng-actions/harden-runner-block-action@6db537b3e6d060c3287c5a3ce2c28b55b0af330d  # v0.2.1
         with:
-          config: '@18d9c4446bea555d0783e850f6d295f844fe8f67'  # v0.1.1
+          config: '@807a544b7e55a9224b2b3780e636467bd4b5b99b'  # v0.5.0
 
       - name: 'Harden runner (block)'
         # yamllint disable-line rule:line-length
@@ -280,19 +285,38 @@ jobs:
           allowed-endpoints: >
             ${{ env.CONNECTION_ALLOW_LIST }}
 
-      - name: 'Checkout .github repository'
+      - name: 'Download score metrics artifacts'
         # yamllint disable-line rule:line-length
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
-          persist-credentials: false
+          pattern: 'aislop-metrics-*'
+          path: 'aislop-metrics'
+          merge-multiple: true
 
-      - name: 'Render organisation posture summary'
+      - name: 'Render organisation score table'
         shell: bash
         env:
-          GH_TOKEN: '${{ inputs.token || secrets.ZIZMOR_SARIF_PAT }}'
           ORG: '${{ needs.discover.outputs.org }}'
-          MATRIX: '${{ needs.discover.outputs.matrix }}'
+          COUNT: '${{ needs.discover.outputs.count }}'
         run: |
-          # Render organisation posture summary
+          # Render organisation score table
           set -euo pipefail
-          python3 .github/scripts/zizmor_org_summary.py
+          shopt -s nullglob
+          files=(aislop-metrics/*.json)
+          {
+            echo "# 🧹 AI Slop Scores: ${ORG}"
+            echo
+            echo "${#files[@]} of ${COUNT} in-scope repositories" \
+              'reported metrics.'
+            echo
+            if [ "${#files[@]}" -gt 0 ]; then
+              echo '| Repository | Score | Label | Errors' \
+                '| Warnings | Fixable | Files |'
+              echo '| --- | ---: | --- | ---: | ---: | ---: | ---: |'
+              # Rank worst-first; unscoreable repositories sort last.
+              jq -r -s 'sort_by(.score // 999)[]
+                | "| \(.repo) | \(.score // "-") | \(.label // "-")"
+                  + " | \(.errors) | \(.warnings) | \(.fixable)"
+                  + " | \(.files) |"' "${files[@]}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

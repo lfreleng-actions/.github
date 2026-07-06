@@ -1,0 +1,115 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Organisation-wide AI slop / code quality scan using aislop.
+#
+# This workflow lives in lfreleng-actions/.github and runs across the
+# organisation as a "required workflow" via an organisation ruleset
+# (Settings -> Rules -> Rulesets at the org level), so it executes on
+# every selected repository without a per-repository file. It also
+# audits this repository on demand (workflow_dispatch) and on its
+# own pull requests.
+#
+# Scope: the scan covers ONLY the files changed on the pull request
+# (aislop --changes --base), not the whole repository, so the check
+# reports on what the PR introduces rather than pre-existing state.
+# The scheduled aislop-sarif-publish.yaml workflow owns whole-repo
+# scanning and default-branch code-scanning SARIF.
+#
+# Mode: advisory. The scan (delegated to aislop-scan-action, which
+# pins and verifies the aislop CLI) never fails on findings; a
+# separate gate step fails the run on findings only when the
+# organisation variable AISLOP_ENFORCE is set to 'true'. Until then
+# the workflow reports via the step summary and inline annotations
+# without blocking anything.
+#
+# See README.md ("Organisation-wide aislop scan") for org-admin setup.
+
+name: 'AI Slop Scan 🧹'
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: 'Audit changes'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # Load the egress allow-list out-of-band from
+      # lfreleng-actions/.github and publish it as
+      # $CONNECTION_ALLOW_LIST for the harden-runner step below.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@6db537b3e6d060c3287c5a3ce2c28b55b0af330d  # v0.2.1
+        with:
+          config: '@807a544b7e55a9224b2b3780e636467bd4b5b99b'  # v0.5.0
+
+      # Harden the runner with the just-loaded allow-list.
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Checkout repository under audit'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          # Full history so aislop can resolve the merge base of the
+          # pull request branch against the base branch.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 'Run aislop quality gate (changed files)'
+        id: 'scan'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/aislop-scan-action@f990c967bc1cbbd3348cdf4ed450b4523657f123  # v0.2.0
+        with:
+          # On pull_request events the diff base is the PR base branch;
+          # on workflow_dispatch fall back to the default branch (an
+          # empty diff, so the run is a no-op smoke test).
+          scan-mode: 'changes'
+          # yamllint disable-line rule:line-length
+          base: 'origin/${{ github.base_ref || github.event.repository.default_branch }}'
+
+      - name: 'Enforce quality gate'
+        shell: 'bash'
+        env:
+          AISLOP_ENFORCE: '${{ vars.AISLOP_ENFORCE }}'
+          SCAN_RC: '${{ steps.scan.outputs.exit-code }}'
+        run: |
+          # Enforce quality gate
+          set -euo pipefail
+          # Advisory rollout: findings never fail the run until the
+          # organisation variable AISLOP_ENFORCE is set to 'true'.
+          # Several repositories carry pre-existing issues that need
+          # triage before enforcement can switch on. (The action fails
+          # the job by itself when the tool breaks and produces no
+          # readable report, so this gate only weighs findings.)
+          if [ "${AISLOP_ENFORCE}" != 'true' ]; then
+            if [ "${SCAN_RC}" != '0' ]; then
+              msg='aislop quality gate did not pass (advisory mode;'
+              msg="${msg} not enforced)"
+              echo "::warning::${msg}"
+            fi
+            echo 'Advisory mode: passing regardless of findings.'
+            exit 0
+          fi
+          if [ "${SCAN_RC}" != '0' ]; then
+            echo "::error::aislop quality gate failed (rc=${SCAN_RC})"
+            exit 1
+          fi
+          echo 'aislop quality gate passed.'
