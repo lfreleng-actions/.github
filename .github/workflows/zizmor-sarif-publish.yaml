@@ -21,6 +21,18 @@
 # classic PAT needs the scopes: repo, read:org, security_events
 # (security_events grants the code-scanning write used by the SARIF upload).
 #
+# Analysis lineage: code scanning groups analyses into sets keyed by
+# (ref, tool, category, analysis key) and an alert only closes when the
+# most recent analysis of EVERY set that reported it comes back clean.
+# A set that stops receiving uploads therefore pins its alerts open
+# forever (this bit us: alerts from a retired per-repo upload job
+# stayed open after publishing moved here). To keep the lineage stable
+# and explicit, the publish step stamps the SARIF run's
+# automationDetails.id ('zizmor') before upload -- the REST API derives
+# the analysis category from that field. Do not change or remove the
+# stamp without migrating: publish under the new category first, then
+# delete the superseded analysis sets in every repository.
+#
 # The target organisation defaults to the org this workflow runs in
 # (github.repository_owner); a workflow_dispatch 'org' input scans a
 # different organisation instead. See README.
@@ -293,6 +305,15 @@ jobs:
           # reports findings down to the low tier (informational and
           # unknown stay out to limit noise). Set explicitly so the breadth
           # does not depend on the pinned action's defaults.
+          #
+          # Keep these settings identical to the ruleset-enforced PR gate
+          # (zizmor.yaml): the gate blocks on SARIF level note-and-above,
+          # and consumers of the published SARIF (e.g. the
+          # github-security-report tool) decode note as Low. Both only
+          # hold while the floor is 'low', because zizmor emits Low AND
+          # Informational findings at SARIF level note: lowering the
+          # floor to 'informational' would let informational findings
+          # into the SARIF where they are indistinguishable from Low.
           persona: 'auditor'
           min-severity: 'low'
 
@@ -314,8 +335,26 @@ jobs:
           # SARIF never lands on the jq command line (ARG_MAX).
           sha="$(git rev-parse HEAD)"
           payload_file="$(mktemp)"
-          trap 'rm -f "${payload_file}"' EXIT
-          gzip -c "${SARIF_FILE}" | base64 -w0 > "${payload_file}"
+          stamped_file="$(mktemp)"
+          trap 'rm -f "${payload_file}" "${stamped_file}"' EXIT
+          # Stamp a stable analysis category (the run's
+          # automationDetails.id) so every upload lands in one explicit
+          # lineage; see the header comment for the migration required
+          # if this ever changes. Set only the id so any other
+          # automationDetails fields a future zizmor emits survive.
+          jq '.runs[].automationDetails.id = "zizmor"' \
+            "${SARIF_FILE}" > "${stamped_file}"
+          # Guard against the stamp silently becoming a no-op (for
+          # example an unexpected SARIF shape with no runs array): a
+          # categoryless upload would reintroduce the implicit-lineage
+          # problem this stamp exists to prevent.
+          if ! jq -e '(.runs | length) > 0
+                      and all(.runs[]; .automationDetails.id == "zizmor")' \
+               "${stamped_file}" > /dev/null; then
+            echo "::error::SARIF category stamp failed for ${REPO}" >&2
+            exit 1
+          fi
+          gzip -c "${stamped_file}" | base64 -w0 > "${payload_file}"
           body="$(jq -n --arg sha "${sha}" \
             --arg ref "refs/heads/${DEFAULT_BRANCH}" \
             --rawfile sarif "${payload_file}" \
