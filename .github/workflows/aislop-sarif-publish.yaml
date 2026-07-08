@@ -18,6 +18,17 @@
 # API. A final aggregation job renders a ranked score table across the
 # organisation so the worst offenders are easy to spot.
 #
+# Analysis lineage: code scanning groups analyses into sets keyed by
+# (ref, tool, category, analysis key) and an alert only closes when the
+# most recent analysis of EVERY set that reported it comes back clean.
+# A set that stops receiving uploads therefore pins its alerts open
+# forever. To keep the lineage stable and explicit, the publish step
+# stamps the SARIF run's automationDetails.id ('aislop/', yielding
+# category 'aislop') before upload -- the REST API derives the
+# analysis category from that field. Do not change or remove the
+# stamp without migrating: publish under the new category first, then
+# delete the superseded analysis sets in every repository.
+#
 # Requires a PAT with cross-repo code-scanning write access, read
 # from the AISLOP_SARIF_PAT secret; a workflow_dispatch 'token' input
 # can override it for ad-hoc runs (note: dispatch inputs are stored
@@ -191,14 +202,18 @@ jobs:
           # lineage, mirroring the zizmor publisher. Set only the id so
           # any other automationDetails fields a future aislop emits
           # survive.
-          jq '.runs[].automationDetails.id = "aislop"' \
+          # The trailing slash matters: GitHub parses the id as
+          # category/run-id, and an id with no slash is ALL run-id with
+          # an empty category (see "SARIF support for code scanning",
+          # runAutomationDetails). "aislop/" yields category "aislop".
+          jq '.runs[].automationDetails.id = "aislop/"' \
             "${SARIF_FILE}" > "${stamped_file}"
           # Guard against the stamp silently becoming a no-op (for
           # example an unexpected SARIF shape with no runs array): a
           # categoryless upload would scatter results across implicit
           # lineages.
           if ! jq -e '(.runs | type == "array" and length > 0)
-                      and all(.runs[]; .automationDetails.id == "aislop")' \
+                      and all(.runs[]; .automationDetails.id == "aislop/")' \
                "${stamped_file}" > /dev/null; then
             echo "::error::SARIF category stamp failed for ${REPO}" >&2
             exit 1
