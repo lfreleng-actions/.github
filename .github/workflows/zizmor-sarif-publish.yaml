@@ -132,10 +132,18 @@ jobs:
           persist-credentials: false
           token: '${{ inputs.token || secrets.ZIZMOR_SARIF_PAT }}'
 
+      - name: 'Resolve audited commit'
+        id: 'head'
+        shell: bash
+        run: |
+          # Resolve audited commit
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: 'Run zizmor audit'
         id: 'audit'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/zizmor-scan-action@d88da3d4dce965721cd410013ed8d628d852b61f  # v0.3.2
+        uses: lfreleng-actions/zizmor-scan-action@5fa3f036566614a35970aa50d984905df82333c9  # v0.4.0
         with:
           # Broad coverage with a sensible floor: the auditor persona
           # surfaces the widest set of audits and a low severity floor
@@ -153,6 +161,11 @@ jobs:
           # into the SARIF where they are indistinguishable from Low.
           persona: 'auditor'
           min-severity: 'low'
+          # Label the step summary with the repository under audit
+          # rather than the .github repository running this workflow.
+          # yamllint disable-line rule:line-length
+          summary-repository: '${{ needs.discover.outputs.org }}/${{ matrix.repo }}'
+          summary-sha: '${{ steps.head.outputs.sha }}'
 
       - name: 'Publish SARIF to code scanning'
         shell: bash
@@ -162,6 +175,7 @@ jobs:
           REPO: '${{ matrix.repo }}'
           DEFAULT_BRANCH: '${{ matrix.default_branch }}'
           SARIF_FILE: '${{ steps.audit.outputs.sarif-file }}'
+          HEAD_SHA: '${{ steps.head.outputs.sha }}'
         run: |
           # Publish SARIF to code scanning
           set -euo pipefail
@@ -170,7 +184,6 @@ jobs:
           # PR-scoped analysis). The SARIF is gzip + base64 per the API.
           # The payload goes through a temp file and jq --rawfile so a large
           # SARIF never lands on the jq command line (ARG_MAX).
-          sha="$(git rev-parse HEAD)"
           payload_file="$(mktemp)"
           stamped_file="$(mktemp)"
           trap 'rm -f "${payload_file}" "${stamped_file}"' EXIT
@@ -196,7 +209,7 @@ jobs:
             exit 1
           fi
           gzip -c "${stamped_file}" | base64 -w0 > "${payload_file}"
-          body="$(jq -n --arg sha "${sha}" \
+          body="$(jq -n --arg sha "${HEAD_SHA}" \
             --arg ref "refs/heads/${DEFAULT_BRANCH}" \
             --rawfile sarif "${payload_file}" \
             '{commit_sha: $sha, ref: $ref, sarif: $sarif}')"
