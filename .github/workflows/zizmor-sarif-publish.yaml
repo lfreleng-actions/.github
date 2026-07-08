@@ -30,10 +30,11 @@
 # forever (this bit us: alerts from a retired per-repo upload job
 # stayed open after publishing moved here). To keep the lineage stable
 # and explicit, the publish step stamps the SARIF run's
-# automationDetails.id ('zizmor') before upload -- the REST API derives
-# the analysis category from that field. Do not change or remove the
-# stamp without migrating: publish under the new category first, then
-# delete the superseded analysis sets in every repository.
+# automationDetails.id ('zizmor/', yielding category 'zizmor') before
+# upload -- the REST API derives the analysis category from that field.
+# Do not change or remove the stamp without migrating: publish under
+# the new category first, then delete the superseded analysis sets in
+# every repository.
 #
 # The target organisation defaults to the org this workflow runs in
 # (github.repository_owner); a workflow_dispatch 'org' input scans a
@@ -344,14 +345,18 @@ jobs:
           # lineage; see the header comment for the migration required
           # if this ever changes. Set only the id so any other
           # automationDetails fields a future zizmor emits survive.
-          jq '.runs[].automationDetails.id = "zizmor"' \
+          # The trailing slash matters: GitHub parses the id as
+          # category/run-id, and an id with no slash is ALL run-id with
+          # an empty category (see "SARIF support for code scanning",
+          # runAutomationDetails). "zizmor/" yields category "zizmor".
+          jq '.runs[].automationDetails.id = "zizmor/"' \
             "${SARIF_FILE}" > "${stamped_file}"
           # Guard against the stamp silently becoming a no-op (for
           # example an unexpected SARIF shape with no runs array): a
           # categoryless upload would reintroduce the implicit-lineage
           # problem this stamp exists to prevent.
           if ! jq -e '(.runs | type == "array" and length > 0)
-                      and all(.runs[]; .automationDetails.id == "zizmor")' \
+                      and all(.runs[]; .automationDetails.id == "zizmor/")' \
                "${stamped_file}" > /dev/null; then
             echo "::error::SARIF category stamp failed for ${REPO}" >&2
             exit 1
