@@ -106,11 +106,11 @@ jobs:
         run: |
           set -euo pipefail
           # zizmor maps severities onto SARIF levels: error=High,
-          # warning=Medium, note=Low or Info, none unused. The audit
-          # above runs with a 'low' severity floor, so informational
-          # findings never reach the SARIF and every note here is a
-          # genuine Low finding; fail the run on any note-or-higher
-          # result.
+          # warning=Medium, note=Low or Info, none=Info (not currently
+          # emitted). The audit above runs with a 'low' severity floor,
+          # so informational findings never reach the SARIF and every
+          # note here is a genuine Low finding; fail the run on any
+          # note-or-higher result.
           if [ ! -f "${ZIZMOR_SARIF}" ]; then
             echo "::error::zizmor SARIF report not found: ${ZIZMOR_SARIF}"
             exit 1

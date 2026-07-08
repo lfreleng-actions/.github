@@ -44,30 +44,48 @@ _SARIF_LEVELS = {
 def _gh_api_objects(path: str) -> tuple[list[dict] | None, str | None]:
     """Fetch a paginated array endpoint as a list of objects.
 
+    Uses ``gh api --paginate --slurp``, which wraps the per-page arrays
+    in one outer JSON array -- a single unambiguous document to parse
+    (line-oriented parsing of jq output would depend on its formatting).
+
     Returns (objects, None) on success, (None, "no-data") when code
-    scanning has no analyses (404), and (None, error) otherwise after
-    three attempts.
+    scanning has no analyses (a 404 with the repository itself still
+    readable), and (None, error) otherwise after three attempts. A 404
+    can also mean the repository is unreadable (GitHub hides private
+    repos behind 404), so it only counts as no-data when a probe of the
+    base repository endpoint succeeds; anything else is an error, which
+    fails the job rather than under-reporting posture.
     """
     error = "unknown error"
     for _ in range(3):
         proc = subprocess.run(  # noqa: S603,S607
-            ["gh", "api", "--paginate", path, "--jq", ".[]"],
+            ["gh", "api", "--paginate", "--slurp", path],
             capture_output=True,
             text=True,
             check=False,
         )
         if proc.returncode == 0:
-            objects = [
-                json.loads(line)
-                for line in proc.stdout.splitlines()
-                if line.strip()
-            ]
-            return objects, None
+            pages = json.loads(proc.stdout)
+            return [alert for page in pages for alert in page], None
         error = proc.stderr.strip() or "unknown error"
         if "HTTP 404" in error:
-            return None, "no-data"
+            if _repo_readable(path):
+                return None, "no-data"
+            return None, error
         time.sleep(5)
     return None, error
+
+
+def _repo_readable(alerts_path: str) -> bool:
+    """Probe the base repository endpoint behind an alerts path."""
+    repo_path = alerts_path.split("/code-scanning/", 1)[0]
+    proc = subprocess.run(  # noqa: S603,S607
+        ["gh", "api", repo_path, "--jq", ".name"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc.returncode == 0
 
 
 def _bucket(alert: dict) -> str:

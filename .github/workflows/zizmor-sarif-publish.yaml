@@ -350,7 +350,7 @@ jobs:
           # example an unexpected SARIF shape with no runs array): a
           # categoryless upload would reintroduce the implicit-lineage
           # problem this stamp exists to prevent.
-          if ! jq -e '(.runs | length) > 0
+          if ! jq -e '(.runs | type == "array" and length > 0)
                       and all(.runs[]; .automationDetails.id == "zizmor")' \
                "${stamped_file}" > /dev/null; then
             echo "::error::SARIF category stamp failed for ${REPO}" >&2
@@ -376,16 +376,23 @@ jobs:
             echo "::error::failed to publish SARIF for ${REPO} (3 tries)" >&2
             exit 1
           fi
-          sarif_id="$(printf '%s' "${resp}" | jq -r '.id')"
+          sarif_id="$(printf '%s' "${resp}" | jq -r '.id // empty')"
+          if [ -z "${sarif_id}" ]; then
+            echo "Unexpected upload response: ${resp}" >&2
+            echo "::error::no SARIF id in upload response for ${REPO}" >&2
+            exit 1
+          fi
           echo "Published zizmor SARIF for ${ORG}/${REPO} @ ${sha}"
           # Wait for code scanning to finish processing the upload so
           # the run only succeeds once alert state is committed (the
           # posture summary job reads it) and silent SARIF rejections
           # surface here as failures instead of vanishing.
           for _ in $(seq 1 30); do
+            # A failed status read logs its error (visible in the job
+            # log for diagnosis) and retries as pending.
             status="$(gh api \
               "/repos/${ORG}/${REPO}/code-scanning/sarifs/${sarif_id}" \
-              --jq '.processing_status' 2>/dev/null)" || status='pending'
+              --jq '.processing_status')" || status='pending'
             case "${status}" in
               complete)
                 echo "Code scanning processed the SARIF for ${REPO}"
