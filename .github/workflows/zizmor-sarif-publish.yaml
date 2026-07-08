@@ -12,7 +12,9 @@
 # in-scope organisation repositories, runs the zizmor-scan-action against
 # each, and publishes the SARIF to that repository's code scanning via the
 # REST API. The default-branch code-scanning alerts (and anything built on
-# them, e.g. github-security-report-action) then reflect reality.
+# them, e.g. github-security-report-action) then reflect reality. A final
+# job renders the complete organisation posture (every repository with
+# findings, untruncated, worst-first) to the run's step summary.
 #
 # Requires a PAT with cross-repo code-scanning write access. By default the
 # workflow reads the ZIZMOR_SARIF_PAT secret; a workflow_dispatch 'token'
@@ -359,15 +361,97 @@ jobs:
             --arg ref "refs/heads/${DEFAULT_BRANCH}" \
             --rawfile sarif "${payload_file}" \
             '{commit_sha: $sha, ref: $ref, sarif: $sarif}')"
+          resp=''
           for attempt in 1 2 3; do
-            if printf '%s' "${body}" | gh api --method POST \
+            if resp="$(printf '%s' "${body}" | gh api --method POST \
                  -H 'Accept: application/vnd.github+json' \
-                 "/repos/${ORG}/${REPO}/code-scanning/sarifs" --input -; then
-              echo "Published zizmor SARIF for ${ORG}/${REPO} @ ${sha}"
-              exit 0
+                 "/repos/${ORG}/${REPO}/code-scanning/sarifs" --input -)"; then
+              break
             fi
+            resp=''
             echo "::warning::SARIF upload attempt ${attempt} failed for ${REPO}"
             sleep 5
           done
-          echo "::error::failed to publish SARIF for ${REPO} after 3 tries" >&2
+          if [ -z "${resp}" ]; then
+            echo "::error::failed to publish SARIF for ${REPO} (3 tries)" >&2
+            exit 1
+          fi
+          sarif_id="$(printf '%s' "${resp}" | jq -r '.id')"
+          echo "Published zizmor SARIF for ${ORG}/${REPO} @ ${sha}"
+          # Wait for code scanning to finish processing the upload so
+          # the run only succeeds once alert state is committed (the
+          # posture summary job reads it) and silent SARIF rejections
+          # surface here as failures instead of vanishing.
+          for _ in $(seq 1 30); do
+            status="$(gh api \
+              "/repos/${ORG}/${REPO}/code-scanning/sarifs/${sarif_id}" \
+              --jq '.processing_status' 2>/dev/null)" || status='pending'
+            case "${status}" in
+              complete)
+                echo "Code scanning processed the SARIF for ${REPO}"
+                exit 0
+                ;;
+              failed)
+                gh api \
+                  "/repos/${ORG}/${REPO}/code-scanning/sarifs/${sarif_id}" \
+                  --jq '.errors // []' || true
+                echo "::error::code scanning rejected the SARIF for ${REPO}" >&2
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          echo "::error::SARIF processing timed out for ${REPO}" >&2
           exit 1
+
+  summarise:
+    name: 'Organisation posture summary'
+    needs: ['discover', 'publish']
+    # Render the summary even when some publish jobs fail: a partial
+    # posture with the failures called out beats no posture at all. The
+    # summary script itself fails the job if any repository's alerts
+    # cannot be read, so an incomplete table never looks complete.
+    if: >-
+      ${{ always()
+      && needs.discover.result == 'success'
+      && needs.discover.outputs.count != '0' }}
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 15
+    # Run this job in a dedicated environment so its execution and any
+    # environment-scoped secrets can be gated by environment protection
+    # rules (satisfies zizmor's secrets-outside-env).
+    environment: 'production'
+    permissions:
+      contents: read
+    steps:
+      # Load the egress allow-list out-of-band from lfreleng-actions/.github
+      # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@6db537b3e6d060c3287c5a3ce2c28b55b0af330d  # v0.2.1
+        with:
+          config: '@18d9c4446bea555d0783e850f6d295f844fe8f67'  # v0.1.1
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Checkout .github repository'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: 'Render organisation posture summary'
+        shell: bash
+        env:
+          GH_TOKEN: '${{ inputs.token || secrets.ZIZMOR_SARIF_PAT }}'
+          ORG: '${{ needs.discover.outputs.org }}'
+          MATRIX: '${{ needs.discover.outputs.matrix }}'
+        run: |
+          # Render organisation posture summary
+          set -euo pipefail
+          python3 .github/scripts/zizmor_org_summary.py
