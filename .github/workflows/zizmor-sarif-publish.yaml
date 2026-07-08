@@ -300,7 +300,7 @@ jobs:
       - name: 'Run zizmor audit'
         id: 'audit'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/zizmor-scan-action@81b151507f66b40b3dbf8c76eb616040622f7342  # v0.3.0
+        uses: lfreleng-actions/zizmor-scan-action@d88da3d4dce965721cd410013ed8d628d852b61f  # v0.3.2
         with:
           # Broad coverage with a sensible floor: the auditor persona
           # surfaces the widest set of audits and a low severity floor
