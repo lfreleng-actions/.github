@@ -55,6 +55,25 @@ organisation unless overridden at the repository level.
   reporting reflects reality. See
   [Organisation-wide zizmor SARIF publisher](#organisation-wide-zizmor-sarif-publisher)
   below for setup.
+- **[`aislop.yaml`](.github/workflows/aislop.yaml)** — Organisation-wide
+  AI-slop / code-quality scan of pull request changes using
+  [aislop](https://github.com/scanaislop/aislop). Runs on every pull
+  request across the organisation as a *required workflow* via an
+  organisation ruleset, scans **the files the PR changes** (not the
+  whole repository), and
+  runs in **advisory mode** (never fails) until an org admin sets the
+  `AISLOP_ENFORCE`
+  organisation variable to `true`; see
+  [Organisation-wide aislop scan](#organisation-wide-aislop-scan) below
+  for the one-time org-admin configuration.
+- **[`aislop-sarif-publish.yaml`](.github/workflows/aislop-sarif-publish.yaml)**
+  — A scheduled (daily) workflow that runs a **full-repository** aislop
+  scan against each in-scope repository, publishes the findings to its
+  **default-branch** code scanning as SARIF, and renders a ranked
+  organisation-wide score table so the repositories needing the most
+  attention are easy to spot. See
+  [Organisation-wide aislop SARIF publisher](#organisation-wide-aislop-sarif-publisher)
+  below for setup.
 
 ### Repository Exclusions
 
@@ -206,9 +225,12 @@ accordingly.
 The `zizmor-sarif-publish.yaml` workflow closes that gap. On a weekday
 schedule (`0 6 * * 1-5`, 06:00 UTC) it:
 
-1. Enumerates the in-scope repositories for the target organisation.
+1. Enumerates the in-scope repositories for the target organisation
+   (via the shared
+   [`repo-discovery.yaml`](.github/workflows/repo-discovery.yaml)
+   reusable workflow).
 2. Applies the [repository scope policy](#repository-scope-policy) from
-   [`.github/zizmor/scan-scope.json`](.github/zizmor/scan-scope.json) — the
+   [`.github/scan-scope.json`](.github/scan-scope.json) — the
    per-organisation scan toggles and `include`/`exclude` globs, plus any
    patterns from the `ZIZMOR_SCAN_INCLUDE` / `ZIZMOR_SCAN_EXCLUDE`
    variables.
@@ -243,7 +265,7 @@ optional inputs (all blank by default):
 - **`org`** — scan a different organisation. When blank, the workflow
   targets the organisation it runs in (`github.repository_owner`), which
   matches the scheduled run. The workflow reads that organisation's scope
-  policy from `.github/zizmor/scan-scope.json`; an organisation with no
+  policy from `.github/scan-scope.json`; an organisation with no
   entry falls back to the default toggles and the scan variables alone.
 - **`repo`** — scan a single named repository (for smoke-testing). The
   scope policy still applies, so the workflow produces an empty matrix —
@@ -257,10 +279,134 @@ optional inputs (all blank by default):
   them, so prefer the secret for routine use and reserve this input for
   testing.
 
+### Organisation-wide aislop scan
+
+The `aislop.yaml` workflow scans pull request changes across every
+repository in the organisation using
+[aislop](https://github.com/scanaislop/aislop), which detects the
+hallmarks of low-quality or AI-generated "slop" code: swallowed
+exceptions, narrative/meta comments, formatting drift, lint errors,
+excessive complexity, and basic security issues. It scores the scanned
+files 0–100 and reports each finding with severity and location.
+
+#### Scan behaviour
+
+- **Scope**: the files **changed on the pull request**, and nothing
+  else (via
+  `aislop ci --changes --base <PR base branch>`), so the check reports
+  on what the PR introduces rather than pre-existing repository state.
+  Whole-repository scanning belongs to the scheduled
+  `aislop-sarif-publish.yaml` workflow.
+- **Implementation**: the scan itself runs through
+  [`aislop-scan-action`](https://github.com/lfreleng-actions/aislop-scan-action)
+  (pinned by commit SHA), which installs the aislop CLI from its
+  bundled, integrity-checked lock file, renders the step summary, and
+  exposes the gate result as an output.
+- **Output**: a step summary with the score, per-engine issue counts,
+  severity/rule breakdowns and the top findings, plus inline PR
+  annotations for the top findings. No SARIF upload happens on pull
+  requests.
+- **Advisory**: the scan step always succeeds; a separate gate step
+  fails the run on findings if the organisation variable
+  **`AISLOP_ENFORCE`** holds `true`. Until then the workflow is
+  purely informational, because repositories across the organisation
+  carry
+  pre-existing issues that need triage before enforcement can switch
+  on. Flipping the variable requires no workflow change.
+- **Version pin**: the aislop CLI version pin lives in
+  `aislop-scan-action` (its bundled `package.json` / `package-lock.json`);
+  bump it there via a PR and release, then update the action pin here.
+
+#### Enabling the check org-wide
+
+Configure `aislop.yaml` as a *required workflow* via an organisation
+ruleset, mirroring the zizmor audit:
+
+1. Go to **Organisation settings** → [**Repository →
+   Rulesets**][org-rulesets] (you must be an organisation owner).
+2. Click **New ruleset** → **New branch ruleset**.
+3. Set:
+   - **Ruleset name**: `aislop code quality scan`
+   - **Enforcement status**: `Active`
+   - **Bypass list**: leave empty
+   - **Target repositories**: `All repositories`
+   - **Target branches**: `Default branch` (and `master` if you have
+     repositories still using that name).
+4. Under **Rules**, enable **Require workflows to pass before merging**
+   and click **Add workflow**:
+   - **Repository**: `lfreleng-actions/.github`
+   - **Workflow file path**: `.github/workflows/aislop.yaml`
+   - **Ref**: `main`
+5. For the initial advisory rollout, leave **Do not require
+   workflows to pass before merging** *checked* so the workflow runs
+   without blocking merges (advisory mode is also reinforced by the
+   gate step, which passes unless `AISLOP_ENFORCE` is `true`). Later,
+   after the team clears the backlog, uncheck this option **and** set
+   the `AISLOP_ENFORCE` organisation variable to `true` to make the
+   check merge-blocking.
+6. Click **Create**.
+
+After saving, every pull request opened in the organisation will
+trigger an aislop run sourced from `lfreleng-actions/.github`. The
+checks appear in PRs as `AI Slop Scan 🧹 / Audit changes`.
+
+### Organisation-wide aislop SARIF publisher
+
+The `aislop.yaml` check runs on `pull_request` events and scans
+changed files alone, so it never populates a repository's
+**default-branch**
+code scanning. The `aislop-sarif-publish.yaml` workflow closes that
+gap. On a daily schedule (`0 7 * * *`, 07:00 UTC — offset from the
+zizmor publisher at 06:00) it:
+
+1. Enumerates the in-scope repositories for the target organisation
+   (via the shared
+   [`repo-discovery.yaml`](.github/workflows/repo-discovery.yaml)
+   reusable workflow — **the same discovery the zizmor publisher
+   uses**, so the two scanners always cover the same repository
+   selection).
+2. Applies the [repository scope policy](#repository-scope-policy) from
+   [`.github/scan-scope.json`](.github/scan-scope.json), plus any
+   patterns from the `AISLOP_SCAN_INCLUDE` / `AISLOP_SCAN_EXCLUDE`
+   variables.
+3. Checks out each repository at its default branch, runs a
+   **full-repository** scan with
+   [`aislop-scan-action`](https://github.com/lfreleng-actions/aislop-scan-action),
+   and uploads the SARIF to that
+   repository's code scanning via `POST /code-scanning/sarifs` against
+   the **default-branch HEAD**. Findings appear in each repository's
+   **Security → Code scanning** tab under the `aislop` tool.
+4. Aggregates per-repository score metrics into a ranked, worst-first
+   table in the run's step summary, answering "which repositories have
+   the biggest problems?" at a glance.
+
+#### Publisher token
+
+Writing code-scanning results to *other* repositories is beyond what
+the default `GITHUB_TOKEN` can do, so the workflow needs a dedicated
+PAT in the **`AISLOP_SARIF_PAT`** repository secret. The aislop and
+zizmor publishers use separately scoped credentials by design — they
+do not share secrets. A
+**classic PAT** needs the scopes `repo`, `read:org` and
+`security_events`; a fine-grained PAT scoped to the organisation needs
+Contents read, Metadata read, and Code scanning alerts **write**.
+
+#### Manual dispatch
+
+**Run workflow** also triggers the workflow on demand, with the same
+three optional inputs as the zizmor publisher (`org`, `repo`, and
+`token`); see
+[Manual dispatch inputs](#manual-dispatch-inputs) above for their
+semantics. The `token` input falls back to the `AISLOP_SARIF_PAT`
+secret when blank.
+
 ### Repository scope policy
 
-The `zizmor-sarif-publish.yaml` workflow reads its scope from
-[`.github/zizmor/scan-scope.json`](.github/zizmor/scan-scope.json), keyed
+The `zizmor-sarif-publish.yaml` and `aislop-sarif-publish.yaml`
+workflows read their scope (through the shared
+[`repo-discovery.yaml`](.github/workflows/repo-discovery.yaml)
+reusable workflow) from
+[`.github/scan-scope.json`](.github/scan-scope.json), keyed
 by organisation. Each organisation provides four boolean scan toggles and
 two **glob** pattern lists:
 
@@ -320,6 +466,10 @@ newlines):
 
 - **`ZIZMOR_SCAN_INCLUDE`** — extra `include` (allow-list) patterns.
 - **`ZIZMOR_SCAN_EXCLUDE`** — extra `exclude` patterns.
+
+The `aislop-sarif-publish.yaml` workflow honours the analogous
+**`AISLOP_SCAN_INCLUDE`** / **`AISLOP_SCAN_EXCLUDE`** variables, so the
+two scanners can diverge at run time without editing the shared JSON.
 
 The workflow merges the variable patterns with the organisation's JSON
 lists before matching.

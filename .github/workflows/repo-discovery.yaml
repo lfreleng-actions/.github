@@ -1,0 +1,243 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Shared organisation repository discovery for the SARIF publishers.
+#
+# Called (workflow_call) by zizmor-sarif-publish.yaml and
+# aislop-sarif-publish.yaml so both scanners resolve the same
+# repository selection from a single implementation. Applies the scope
+# policy in .github/scan-scope.json (per-organisation scan toggles
+# plus include/exclude globs) and any extra patterns supplied by the
+# caller, then emits a matrix of {repo, default_branch} objects.
+
+name: 'Repository Discovery 🔍'
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_call:
+    inputs:
+      org:
+        description: 'Organisation to enumerate (name only)'
+        required: true
+        type: 'string'
+      only-repo:
+        description: 'Restrict discovery to this repository (name only)'
+        required: false
+        type: 'string'
+        default: ''
+      extra-include:
+        # yamllint disable-line rule:line-length
+        description: 'Extra include globs (comma, space, or newline separated)'
+        required: false
+        type: 'string'
+        default: ''
+      extra-exclude:
+        # yamllint disable-line rule:line-length
+        description: 'Extra exclude globs (comma, space, or newline separated)'
+        required: false
+        type: 'string'
+        default: ''
+    secrets:
+      token:
+        description: 'PAT able to list the organisation repositories'
+        required: true
+    outputs:
+      matrix:
+        description: 'JSON array of {repo, default_branch} objects'
+        value: ${{ jobs.discover.outputs.matrix }}
+      count:
+        description: 'Number of in-scope repositories'
+        value: ${{ jobs.discover.outputs.count }}
+      org:
+        description: 'Organisation the matrix covers'
+        value: ${{ jobs.discover.outputs.org }}
+
+permissions: {}
+
+jobs:
+  discover:
+    name: 'Discover repositories'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    # Run this job in a dedicated environment so its execution and any
+    # environment-scoped secrets can be gated by environment protection
+    # rules (satisfies zizmor's secrets-outside-env).
+    environment: 'production'
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+      count: ${{ steps.list.outputs.count }}
+      org: ${{ steps.list.outputs.org }}
+    steps:
+      # Load the egress allow-list out-of-band from lfreleng-actions/.github
+      # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@6db537b3e6d060c3287c5a3ce2c28b55b0af330d  # v0.2.1
+        with:
+          config: '@807a544b7e55a9224b2b3780e636467bd4b5b99b'  # v0.5.0
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Checkout .github repository'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: 'Build in-scope repository matrix'
+        id: 'list'
+        shell: bash
+        env:
+          GH_TOKEN: '${{ secrets.token }}'
+          ORG: '${{ inputs.org }}'
+          ONLY_REPO: '${{ inputs.only-repo }}'
+          EXTRA_INCLUDE: '${{ inputs.extra-include }}'
+          EXTRA_EXCLUDE: '${{ inputs.extra-exclude }}'
+        run: |
+          # Build in-scope repository matrix
+          set -euo pipefail
+          echo "Target organisation: ${ORG}"
+
+          # Fail fast on a missing token rather than emitting an opaque auth
+          # error on the first API call. The default GITHUB_TOKEN cannot
+          # write code-scanning results to other repositories, so the
+          # calling workflow must pass a dedicated PAT.
+          if [ -z "${GH_TOKEN}" ]; then
+            msg="No token available: the calling workflow must pass a"
+            msg="${msg} PAT via the 'token' secret"
+            echo "::error::${msg}" >&2
+            exit 1
+          fi
+
+          # Scope policy is data-driven and SHARED between the SARIF
+          # publishers: every caller reads .github/scan-scope.json
+          # (keyed by organisation) so all scanners cover the same
+          # repository selection. Per organisation it provides four
+          # boolean scan toggles plus include and exclude glob lists;
+          # the caller-supplied extra-include / extra-exclude inputs
+          # add patterns at run time (comma, space, or newline
+          # separated). Patterns are case-insensitive globs (*, ?, and
+          # [..] classes) matched against the repository name: when any
+          # include pattern is present a repository must match one to
+          # be in scope, and any matching exclude pattern removes it.
+          # The scan toggles (all default false) opt extra categories
+          # in -- archived, fork, template and private repositories are
+          # skipped unless their toggle is true. Disabled repositories
+          # are always skipped (GitHub blocks their checkout). An
+          # organisation absent from the file is governed by the toggle
+          # defaults and the caller-supplied patterns alone.
+          config='.github/scan-scope.json'
+          read_toggle() {
+            jq -r --arg o "${ORG}" --arg k "$1" \
+              '.organisations[$o][$k] // false' "${config}"
+          }
+          scan_archived="$(read_toggle scan_archived)"
+          scan_forks="$(read_toggle scan_forks)"
+          scan_templates="$(read_toggle scan_templates)"
+          scan_private="$(read_toggle scan_private)"
+          mapfile -t inc_json < <(jq -r --arg o "${ORG}" \
+            '.organisations[$o].include // [] | .[]' "${config}")
+          mapfile -t exc_json < <(jq -r --arg o "${ORG}" \
+            '.organisations[$o].exclude // [] | .[]' "${config}")
+          split_patterns() {
+            printf '%s' "$1" | tr ',' '\n' | tr -s '[:blank:]' '\n' \
+              | sed '/^$/d'
+          }
+          mapfile -t inc_var < <(split_patterns "${EXTRA_INCLUDE}")
+          mapfile -t exc_var < <(split_patterns "${EXTRA_EXCLUDE}")
+          includes=("${inc_json[@]}" "${inc_var[@]}")
+          excludes=("${exc_json[@]}" "${exc_var[@]}")
+
+          # Case-insensitive glob match of a name against any pattern.
+          shopt -s nocasematch
+          match_any() {
+            local name="$1"
+            shift
+            local pattern
+            for pattern in "$@"; do
+              [ -z "${pattern}" ] && continue
+              # shellcheck disable=SC2254  # intentional glob from config
+              case "${name}" in
+                ${pattern}) return 0 ;;
+              esac
+            done
+            return 1
+          }
+
+          if [ -n "${ONLY_REPO}" ]; then
+            # Manual single-repo run: fetch just that repository as a
+            # single JSON object.
+            repos_json="$(gh api "/repos/${ORG}/${ONLY_REPO}" \
+              --jq '{repo: .name, default_branch: .default_branch,
+                     archived: .archived, fork: .fork,
+                     is_template: .is_template, disabled: .disabled,
+                     private: .private}')"
+          else
+            # --paginate applies --jq to each page, so emit one object per
+            # line (a JSON stream). Wrapping in an array would print one
+            # array per page, concatenating into invalid JSON across pages.
+            repos_json="$(gh api --paginate \
+              -H 'Accept: application/vnd.github+json' \
+              "/orgs/${ORG}/repos?per_page=100" \
+              --jq '.[] | {repo: .name, default_branch: .default_branch,
+                           archived: .archived, fork: .fork,
+                           is_template: .is_template, disabled: .disabled,
+                           private: .private}')"
+          fi
+
+          # Apply the scan toggles then the include/exclude glob policy,
+          # collecting surviving repositories as name<TAB>default_branch.
+          selected=''
+          while IFS=$'\t' read -r name branch arch fork tmpl dis priv; do
+            [ -z "${name}" ] && continue
+            # Disabled repositories cannot be checked out; always skip.
+            [ "${dis}" = 'true' ] && continue
+            # Structural categories are opt-in via the scan toggles.
+            [ "${arch}" = 'true' ] && [ "${scan_archived}" != 'true' ] \
+              && continue
+            [ "${fork}" = 'true' ] && [ "${scan_forks}" != 'true' ] \
+              && continue
+            [ "${tmpl}" = 'true' ] && [ "${scan_templates}" != 'true' ] \
+              && continue
+            [ "${priv}" = 'true' ] && [ "${scan_private}" != 'true' ] \
+              && continue
+            if [ "${#includes[@]}" -gt 0 ]; then
+              match_any "${name}" "${includes[@]}" || continue
+            fi
+            if [ "${#excludes[@]}" -gt 0 ]; then
+              match_any "${name}" "${excludes[@]}" && continue
+            fi
+            selected+="${name}"$'\t'"${branch}"$'\n'
+          done < <(printf '%s' "${repos_json}" | jq -r \
+            '[.repo, .default_branch, .archived, .fork,
+              .is_template, .disabled, .private] | @tsv')
+
+          matrix="$(printf '%s' "${selected}" | jq -R -s -c \
+            'split("\n") | map(select(length > 0) | split("\t")
+                              | {repo: .[0], default_branch: .[1]})')"
+          count="$(printf '%s' "${matrix}" | jq 'length')"
+          echo "In-scope repositories: ${count}"
+          # GitHub Actions caps matrix expansion at 256 jobs. Fail early
+          # with guidance rather than silently covering only part of the
+          # organisation.
+          if [ "${count}" -gt 256 ]; then
+            msg="${count} in-scope repositories exceeds the GitHub Actions"
+            msg="${msg} matrix limit of 256; narrow scope via"
+            msg="${msg} .github/scan-scope.json or the caller's"
+            msg="${msg} extra-include / extra-exclude inputs"
+            echo "::error::${msg}" >&2
+            exit 1
+          fi
+          {
+            echo "matrix=${matrix}"
+            echo "count=${count}"
+            echo "org=${ORG}"
+          } >> "$GITHUB_OUTPUT"
