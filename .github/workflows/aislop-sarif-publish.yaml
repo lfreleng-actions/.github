@@ -162,12 +162,19 @@ jobs:
           # Write score metrics for aggregation
           set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/aislop-metrics"
+          # Prefix the filename so a repository whose name starts with
+          # a dot (e.g. .github) never produces a hidden file:
+          # actions/upload-artifact excludes hidden files by default
+          # and the aggregation job's *.json glob skips dotfiles, so
+          # an unprefixed metrics file silently drops the repository
+          # from the organisation score table.
           jq -c --arg repo "${REPO}" \
             '{repo: $repo, score: .score, label: .label,
               scoreable: .scoreable, errors: .summary.errors,
               warnings: .summary.warnings, fixable: .summary.fixable,
               files: .summary.files}' \
-            "${REPORT_FILE}" > "${RUNNER_TEMP}/aislop-metrics/${REPO}.json"
+            "${REPORT_FILE}" \
+            > "${RUNNER_TEMP}/aislop-metrics/metrics-${REPO}.json"
 
       - name: 'Upload score metrics artifact'
         # yamllint disable-line rule:line-length
