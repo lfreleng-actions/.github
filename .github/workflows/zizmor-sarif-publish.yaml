@@ -234,7 +234,7 @@ jobs:
             echo "::error::no SARIF id in upload response for ${REPO}" >&2
             exit 1
           fi
-          echo "Published zizmor SARIF for ${ORG}/${REPO} @ ${sha}"
+          echo "Published zizmor SARIF for ${ORG}/${REPO} @ ${HEAD_SHA}"
           # Wait for code scanning to finish processing the upload so
           # the run only succeeds once alert state is committed (the
           # posture summary job reads it) and silent SARIF rejections
