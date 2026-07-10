@@ -26,7 +26,7 @@ jobs:
     # canonical copy injected org-wide by the mandatory-workflows ruleset,
     # so the fix reaches every repository.
     # yamllint disable-line rule:line-length
-    uses: lfit/releng-reusable-workflows/.github/workflows/reuse-semantic-pull-request.yaml@f412e6f89527da7611a5f4a5f861de86d98d3e9e  # v0.7.0
+    uses: lfit/releng-reusable-workflows/.github/workflows/reuse-semantic-pull-request.yaml@fd3c1b43bc919e9e70787b009ffa2768ddbb1267  # v0.7.2
     permissions:
       contents: read
       pull-requests: read  # Gate step queries the PR API (avoids 403)
