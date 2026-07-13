@@ -157,6 +157,7 @@ with signed tags and provenance attestations.
 | [gha-workflow-linter]              | Lint and verify GitHub workflow/action calls                        |
 | [action-semantic-pull-request]     | Ensure PR titles match the Conventional Commits specification       |
 | [change-isolation-action]          | Verify a change isolates edits to gitignore-style path patterns     |
+| [aislop-scan-action]               | Scan a repository with the aislop AI-slop/code-quality scanner      |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -449,6 +450,7 @@ to all repositories unless otherwise stated.
 [gha-workflow-linter]: https://github.com/lfreleng-actions/gha-workflow-linter
 [action-semantic-pull-request]: https://github.com/lfreleng-actions/action-semantic-pull-request
 [change-isolation-action]: https://github.com/lfreleng-actions/change-isolation-action
+[aislop-scan-action]: https://github.com/lfreleng-actions/aislop-scan-action
 
 <!-- Utility Actions -->
 [git-configure-action]: https://github.com/lfreleng-actions/git-configure-action
