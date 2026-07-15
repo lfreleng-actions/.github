@@ -241,6 +241,14 @@ schedule (`0 6 * * 1-5`, 06:00 UTC) it:
    results land in the default-branch alert list, not a PR-scoped
    analysis).
 
+A final job renders the organisation posture summary to the run's step
+summary. When a **scheduled** run fails or a maintainer cancels it, the
+workflow posts a Slack alert to `#releng-scm` (reusing the
+`SLACK_BOT_TOKEN` secret and `SLACK_CHANNEL_ID` variable documented
+under [Slack Setup](#slack-setup)), so a silent daily breakage never
+slips past the team. Manual `workflow_dispatch` runs stay quiet, since
+a maintainer already watches those.
+
 #### Required secret
 
 Writing code-scanning results to *other* repositories is beyond what the
@@ -380,6 +388,13 @@ zizmor publisher at 06:00) it:
    table in the run's step summary, answering "which repositories have
    the biggest problems?" at a glance.
 
+When a **scheduled** run fails or a maintainer cancels it, the workflow
+posts a Slack alert to `#releng-scm` (reusing the `SLACK_BOT_TOKEN`
+secret and `SLACK_CHANNEL_ID` variable documented under
+[Slack Setup](#slack-setup)), so a silent daily breakage never slips
+past the team. Manual `workflow_dispatch` runs stay quiet, since a
+maintainer already watches those.
+
 #### Publisher token
 
 Writing code-scanning results to *other* repositories is beyond what
@@ -510,9 +525,12 @@ repository name to the `excluded` array.
 
 ## Slack Setup
 
-The repository audit workflow sends notifications using the official
+The repository audit workflow and the scheduled zizmor / AI slop SARIF
+publishers send notifications using the official
 [Slack GitHub Action](https://github.com/slackapi/slack-github-action).
-Complete the following one-time setup steps:
+The publishers reuse the same `SLACK_BOT_TOKEN` secret and
+`SLACK_CHANNEL_ID` variable, and post to `#releng-scm` when a
+scheduled run fails. Complete the following one-time setup steps:
 
 ### 1. Create a Slack App
 
