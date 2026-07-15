@@ -6,7 +6,12 @@
       "scan_templates": true,
       "scan_private": false,
       "include": [],
-      "exclude": []
+      "exclude": [
+        "github-releases-test-fixture",
+        "project-reporting-artifacts",
+        "test-tags-calver",
+        "test-tags-semantic"
+      ]
     }
   }
 }
