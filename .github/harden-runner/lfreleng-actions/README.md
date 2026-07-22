@@ -10,28 +10,28 @@ the `lfreleng-actions` organisation. Workflows load it with
 [harden-runner-block-action][block] and run harden-runner in `block`
 mode, so harden-runner denies any host this file omits.
 
-Each entry is a `host[:port]` token, and a `*.host` wildcard matches
-subdomains. We keep the file sorted alphabetically (`LC_ALL=C`).
+Each entry is a `host[:port]` token, one per line, and a `*.host`
+wildcard matches subdomains. We keep the file sorted alphabetically
+(`LC_ALL=C`). [`harden-runner-block-action`][block] strips `#`
+comments and collapses all whitespace (including newlines) into the
+single space-separated string harden-runner's `allowed-endpoints`
+input expects, so the multi-line, commented form in `allow_list.txt`
+is purely for human readability — it has no effect on what
+harden-runner sees.
 
 ## Documented entries
 
-This table records why specific endpoints appear, and does not yet
-cover every entry: tooling generated the initial list in bulk, and we
-will backfill the rest over time, potentially from the tooling that
-produced them.
+Every entry carries a `# comment` directly above it in `allow_list.txt`
+recording its provenance: the service, and the tool, action or task
+that reaches it. The [github-network-audit][audit] tool reconstructed
+most notes from StepSecurity run data. Hand-written notes cover the
+endpoints the audit data cannot observe, such as harden-runner's own
+control-plane API.
 
-<!-- markdownlint-disable MD013 -->
-
-| Endpoint                                         | Source / reason                                                                                                                               |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tuf-repo.github.com:443`                        | GitHub TUF trust root, fetched by `gh attestation verify` when checking the Sigstore provenance of the zizmor binary (zizmor security audit). |
-| `tmaproduction.blob.core.windows.net:443`        | Azure blob storage that serves GitHub's artifact attestation bundles, fetched by `gh attestation verify` during the same provenance check.    |
-| `api.scorecard.dev:443`                          | OpenSSF Scorecard API, contacted by the scorecard scan/report workflows to publish project results (e.g. `github-security-report-action`).    |
-| `api.osv.dev:443`                                | OSV vulnerability database API, queried by the OpenSSF Scorecard `Vulnerabilities` check to look up known vulnerabilities for dependencies.   |
-| `www.bestpractices.dev:443`                      | OpenSSF Best Practices badge service, queried by the Scorecard `CII-Best-Practices` check to read a project's best-practices badge status.    |
-| `oss-fuzz-build-logs.storage.googleapis.com:443` | OSS-Fuzz build-log bucket, queried by the Scorecard `Fuzzing` check to determine whether a project participates in OSS-Fuzz.                  |
-
-<!-- markdownlint-enable MD013 -->
+When you add an entry, record its reason as a comment on the line(s)
+above it rather than here — the file is the single source of truth for
+this now. Correct or extend a comment whenever you touch an entry.
 
 [hr]: https://github.com/step-security/harden-runner
 [block]: https://github.com/lfreleng-actions/harden-runner-block-action
+[audit]: https://github.com/lfreleng-actions/github-network-audit
