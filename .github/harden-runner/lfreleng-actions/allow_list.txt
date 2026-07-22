@@ -1,1 +1,322 @@
-*.githubapp.com:443 *.githubusercontent.com:443 *.sigstore.dev:443 *.sonarcloud.io:443 analysis-sensorcache-eu-central-1-prod.s3.amazonaws.com:443 api.azul.com:443 api.deps.dev:443 api.github.com:443 api.osv.dev:443 api.scorecard.dev:443 app-updates.agilebits.com:443 astral.sh:443 auth.docker.io:443 azure.archive.ubuntu.com:80 binaries.sonarsource.com:443 build.automotivelinux.org:443 cache.agilebits.com:443 cdn.azul.com:443 deb.debian.org:80 dl-cdn.alpinelinux.org:443 dl.google.com:443 dna-visualization-scannerdata-eu-central-1-prod.s3.amazonaws.com:443 endoflife.date:443 esm.ubuntu.com:443 eu.i.posthog.com:443 files.pythonhosted.org:443 ftp.mozilla.org:443 gerrit.automotivelinux.org:443 gerrit.fd.io:443 gerrit.lfbroadband.org:443 gerrit.linuxfoundation.org:443 gerrit.o-ran-sc.org:29418 gerrit.o-ran-sc.org:443 gerrit.onap.org:443 get.anchore.io:443 get.helm.sh:443 ghcr.io:443 git.opendaylight.org:443 github.com:22 github.com:443 grype.anchore.io:443 jenkins.fd.io:443 jenkins.lfbroadband.org:443 jenkins.o-ran-sc.org:443 jenkins.onap.org:443 jenkins.opendaylight.org:443 jira.linuxfoundation.org:443 jira.o-ran-sc.org:443 jira.onap.org:443 jira.opendaylight.org:443 keys.openpgp.org:443 keyserver.ubuntu.com:443 lf-o-ran-sc.atlassian.net:443 lf-onap.atlassian.net:443 lf-opendaylight.atlassian.net:443 linuxfoundation.1password.com:443 linuxfoundation.org:443 motd.ubuntu.com:443 nexus.onap.org:443 nexus3.o-ran-sc.org:443 o-ran-sc.1password.com:443 oss-fuzz-build-logs.storage.googleapis.com:443 packages.microsoft.com:443 prod.app-api.stepsecurity.io:443 production.cloudflare.docker.com:443 production.cloudfront.docker.com:443 proxy.golang.org:443 pypi.org:443 registry-1.docker.io:443 registry.npmjs.org:443 releases.astral.sh:443 repo.maven.apache.org:443 repo1.maven.org:443 slack.com:443 sonarcloud.io:443 static.rust-lang.org:443 storage.googleapis.com:443 sum.golang.org:443 support.linuxfoundation.org:443 test.pypi.org:443 tmaproduction.blob.core.windows.net:443 tuf-repo.github.com:443 upload.pypi.org:443 uploads.github.com:443 vuln.go.dev:443 www.bestpractices.dev:443 www.google.com:443 www.linuxfoundation.org:443
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+#
+# lfreleng-actions egress allow-list.
+#
+# Consumed via harden-runner-block-action (see README.md), which
+# strips '#' comments and collapses all whitespace -- including these
+# newlines -- into the single space-separated string harden-runner's
+# 'allowed-endpoints' input expects. Edit this file exactly as you
+# would any other list: one host[:port] entry per line, sorted
+# alphabetically (LC_ALL=C). Where the reason for an entry isn't
+# obvious, add a '# comment' directly above it explaining why it's
+# there.
+#
+# A '*.host' entry is a subdomain wildcard.
+#
+# The per-entry comments record provenance: the service, and the tool,
+# action or task observed reaching it. Most were reconstructed from
+# StepSecurity run data with the github-network-audit tool
+# (https://github.com/lfreleng-actions/github-network-audit); a few
+# entries (e.g. harden-runner's own control-plane) are not observed in
+# that data and are annotated from first principles. Coverage is
+# best-effort: correct or extend a comment whenever you touch an entry.
+
+# GitHub hosted-runner control plane (hosted-compute orchestrator and
+# watchdog subdomains on GitHub-hosted runners).
+*.githubapp.com:443
+
+# GitHub user content (raw, release-assets, pkg-containers,
+# github-cloud): raw file fetches, LFS objects, release assets and
+# container layers.
+*.githubusercontent.com:443
+
+# Sigstore keyless signing/verification (fulcio, rekor, timestamp,
+# tuf-repo-cdn): pypi-publish-action, python-build-action,
+# zizmor-scan-action and ossf/scorecard-action.
+*.sigstore.dev:443
+
+# SonarQube Cloud API/scanner subdomains (api, scanner):
+# sonarqube-cloud-scan-action.
+*.sonarcloud.io:443
+
+# SonarQube analysis sensor cache (AWS S3); reached by the Sonar
+# scanner via sonarqube-cloud-scan-action.
+analysis-sensorcache-eu-central-1-prod.s3.amazonaws.com:443
+
+# Azul Zulu JDK metadata API (Java toolchain setup).
+api.azul.com:443
+
+# Google deps.dev API, queried by the OpenSSF Scorecard action.
+api.deps.dev:443
+
+# GitHub REST API: gh CLI, Scorecard, and Python/action clients
+# across org CI.
+api.github.com:443
+
+# OSV vulnerability DB, queried by the OpenSSF Scorecard
+# 'Vulnerabilities' check (ossf/scorecard-action).
+api.osv.dev:443
+
+# OpenSSF Scorecard API, published to by ossf/scorecard-action.
+api.scorecard.dev:443
+
+# 1Password (AgileBits) app-update check (1Password CLI secret fetch).
+app-updates.agilebits.com:443
+
+# Astral (uv) site: uv installer bootstrap used by the Python actions
+# (e.g. gerrit-clone-action, python-sbom-action).
+astral.sh:443
+
+# Docker Hub registry auth, used by docker buildx/build-push and helm.
+auth.docker.io:443
+
+# Ubuntu package archive over apt (go-httpbin-action,
+# python-build-action).
+azure.archive.ubuntu.com:80
+
+# SonarSource scanner binary download; sonarqube-cloud-scan-action.
+binaries.sonarsource.com:443
+
+# Automotive Linux (AGL) build infrastructure; LF project CI.
+build.automotivelinux.org:443
+
+# 1Password (AgileBits) cache endpoint (1Password CLI secret fetch).
+cache.agilebits.com:443
+
+# Azul Zulu JDK download CDN (Java toolchain setup).
+cdn.azul.com:443
+
+# Debian package archive over apt; container/base-image builds.
+deb.debian.org:80
+
+# Alpine Linux package CDN over apk; container image builds.
+dl-cdn.alpinelinux.org:443
+
+# Google download server, fetched by go-httpbin-action and
+# python-build-action.
+dl.google.com:443
+
+# SonarQube scanner data bucket (AWS S3); reached by the Sonar
+# scanner via sonarqube-cloud-scan-action.
+dna-visualization-scannerdata-eu-central-1-prod.s3.amazonaws.com:443
+
+# endoflife.date API, queried by build-metadata-action for runtime
+# end-of-life data.
+endoflife.date:443
+
+# Ubuntu ESM package archive over apt (go-httpbin-action,
+# python-build-action).
+esm.ubuntu.com:443
+
+# PostHog EU ingestion endpoint; the AI slop scan workflows
+# (aislop-scan-action) send telemetry here.
+eu.i.posthog.com:443
+
+# Python package files (PyPI CDN): pip/uv wheel and sdist downloads
+# across org CI.
+files.pythonhosted.org:443
+
+# Mozilla release archive, fetched by python-build-action.
+ftp.mozilla.org:443
+
+# Gerrit (Automotive Linux): git clone via gerrit-clone-action.
+gerrit.automotivelinux.org:443
+
+# Gerrit (FD.io): git clone via gerrit-clone-action.
+gerrit.fd.io:443
+
+# Gerrit (LF Broadband): git clone via gerrit-clone-action.
+gerrit.lfbroadband.org:443
+
+# Gerrit (Linux Foundation): git clone via gerrit-clone-action.
+gerrit.linuxfoundation.org:443
+
+# Gerrit (O-RAN-SC) SSH port: git-over-SSH clone and ssh-keyscan.
+gerrit.o-ran-sc.org:29418
+
+# Gerrit (O-RAN-SC) HTTPS: git clone via gerrit-clone-action and
+# python-test-action.
+gerrit.o-ran-sc.org:443
+
+# Gerrit (ONAP): git clone via gerrit-clone-action and
+# python-test-action.
+gerrit.onap.org:443
+
+# Anchore installer (grype download for anchore/scan-action).
+get.anchore.io:443
+
+# Helm release downloads (azure/setup-helm).
+get.helm.sh:443
+
+# GitHub Container Registry: docker build-push/login and helm pulls.
+ghcr.io:443
+
+# Gerrit (OpenDaylight): git clone via gerrit-clone-action and
+# python-test-action.
+git.opendaylight.org:443
+
+# GitHub SSH: git-over-SSH checkout in python-test-action.
+github.com:22
+
+# GitHub over HTTPS: git/LFS clone, releases and API across org CI.
+github.com:443
+
+# Grype vulnerability DB (anchore/scan-action/download-grype).
+grype.anchore.io:443
+
+# Jenkins CI (FD.io); LF project infrastructure reached by org CI.
+jenkins.fd.io:443
+
+# Jenkins CI (LF Broadband); LF project infrastructure.
+jenkins.lfbroadband.org:443
+
+# Jenkins CI (O-RAN-SC); LF project infrastructure.
+jenkins.o-ran-sc.org:443
+
+# Jenkins CI (ONAP); LF project infrastructure.
+jenkins.onap.org:443
+
+# Jenkins CI (OpenDaylight); LF project infrastructure.
+jenkins.opendaylight.org:443
+
+# Jira (Linux Foundation); LF project issue tracker.
+jira.linuxfoundation.org:443
+
+# Jira (O-RAN-SC); LF project issue tracker.
+jira.o-ran-sc.org:443
+
+# Jira (ONAP); LF project issue tracker.
+jira.onap.org:443
+
+# Jira (OpenDaylight); LF project issue tracker.
+jira.opendaylight.org:443
+
+# OpenPGP keyserver; GPG public-key fetch via dirmngr during
+# package/signature verification.
+keys.openpgp.org:443
+
+# Ubuntu GPG keyserver; public-key fetch via dirmngr, also reached
+# by the Sonar scanner (sonarqube-cloud-scan-action).
+keyserver.ubuntu.com:443
+
+# Jira Cloud (LF O-RAN-SC tenant); LF project issue tracker.
+lf-o-ran-sc.atlassian.net:443
+
+# Jira Cloud (LF ONAP tenant); LF project issue tracker.
+lf-onap.atlassian.net:443
+
+# Jira Cloud (LF OpenDaylight tenant); LF project issue tracker.
+lf-opendaylight.atlassian.net:443
+
+# 1Password vault (Linux Foundation tenant); secret retrieval.
+linuxfoundation.1password.com:443
+
+# Linux Foundation website (wget fetches).
+linuxfoundation.org:443
+
+# Ubuntu message-of-the-day service (runner OS).
+motd.ubuntu.com:443
+
+# Nexus artifact repository (ONAP); LF project artifacts (Java/Python).
+nexus.onap.org:443
+
+# Nexus3 artifact repository (O-RAN-SC); LF project artifacts.
+nexus3.o-ran-sc.org:443
+
+# 1Password vault (O-RAN-SC tenant); secret retrieval via the op CLI.
+o-ran-sc.1password.com:443
+
+# OSS-Fuzz build-log bucket, queried by the Scorecard 'Fuzzing'
+# check (ossf/scorecard-action).
+oss-fuzz-build-logs.storage.googleapis.com:443
+
+# Microsoft package archive over apt (go-httpbin-action,
+# python-build-action).
+packages.microsoft.com:443
+
+# StepSecurity harden-runner control-plane API (agent policy and
+# telemetry). Not observed in the audit data; required by the
+# harden-runner agent itself.
+prod.app-api.stepsecurity.io:443
+
+# Docker Hub CDN (Cloudflare); image layer downloads.
+production.cloudflare.docker.com:443
+
+# Docker Hub CDN (CloudFront); docker build-push image layers.
+production.cloudfront.docker.com:443
+
+# Go module proxy (go build/test/audit actions).
+proxy.golang.org:443
+
+# Python Package Index: pip/uv installs across org CI.
+pypi.org:443
+
+# Docker Hub registry: docker build-push and helm image pulls.
+registry-1.docker.io:443
+
+# npm registry: node-build-action, node-audit-action,
+# path-check-action and aislop-scan-action.
+registry.npmjs.org:443
+
+# Astral uv release downloads (uv installer).
+releases.astral.sh:443
+
+# Maven Central (Apache); Java dependency downloads.
+repo.maven.apache.org:443
+
+# Maven Central (repo1); Java dependency downloads.
+repo1.maven.org:443
+
+# Slack API; slackapi/slack-github-action notifications.
+slack.com:443
+
+# SonarQube Cloud apex host; sonarqube-cloud-scan-action.
+sonarcloud.io:443
+
+# Rust static assets (toolchain/metadata), fetched by
+# build-metadata-action.
+static.rust-lang.org:443
+
+# Google Cloud Storage; Go tooling downloads (go-build/test/audit and
+# sbom-action).
+storage.googleapis.com:443
+
+# Go checksum database (go-audit-action, sbom-action).
+sum.golang.org:443
+
+# LF Support / ServiceDesk; LF project infrastructure reached by
+# org CI.
+support.linuxfoundation.org:443
+
+# TestPyPI; pre-release uploads via pypi-publish-action.
+test.pypi.org:443
+
+# Azure blob storage serving GitHub's artifact attestation bundles,
+# fetched by 'gh attestation verify' (zizmor-scan-action).
+tmaproduction.blob.core.windows.net:443
+
+# GitHub TUF trust root, fetched by 'gh attestation verify' when
+# checking the Sigstore provenance of the zizmor binary
+# (zizmor-scan-action).
+tuf-repo.github.com:443
+
+# PyPI upload endpoint; package publishing via pypi-publish-action.
+upload.pypi.org:443
+
+# GitHub uploads: CodeQL SARIF (github/codeql-action) and
+# release-assets-action.
+uploads.github.com:443
+
+# Go vulnerability DB via govulncheck (go-audit-action).
+vuln.go.dev:443
+
+# OpenSSF Best Practices badge service, queried by the Scorecard
+# 'CII-Best-Practices' check (ossf/scorecard-action).
+www.bestpractices.dev:443
+
+# Google (wget); connectivity and asset fetches.
+www.google.com:443
+
+# Linux Foundation website (wget fetches).
+www.linuxfoundation.org:443
