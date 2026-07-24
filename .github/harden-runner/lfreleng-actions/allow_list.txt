@@ -44,6 +44,11 @@
 # scanner via sonarqube-cloud-scan-action.
 analysis-sensorcache-eu-central-1-prod.s3.amazonaws.com:443
 
+# Eclipse Temurin (Adoptium) JDK metadata/binary API; the temurin
+# default of setup-java (maven-build-action, gradle-build-action).
+# The binary download 302-redirects to release-assets.githubusercontent.com.
+api.adoptium.net:443
+
 # Azul Zulu JDK metadata API (Java toolchain setup).
 api.azul.com:443
 
@@ -235,6 +240,10 @@ oss-fuzz-build-logs.storage.googleapis.com:443
 # python-build-action).
 packages.microsoft.com:443
 
+# Gradle Plugin Portal; plugin-marker artifacts served directly
+# (gradle-build-action / Gradle plugin resolution).
+plugins.gradle.org:443
+
 # StepSecurity harden-runner control-plane API (agent policy and
 # telemetry). Not observed in the audit data; required by the
 # harden-runner agent itself.
@@ -267,6 +276,11 @@ repo.maven.apache.org:443
 
 # Maven Central (repo1); Java dependency downloads.
 repo1.maven.org:443
+
+# Gradle distribution and wrapper checksums (Gradle Wrapper,
+# gradle/actions/setup-gradle). Distribution downloads 302-redirect
+# to release-assets.githubusercontent.com.
+services.gradle.org:443
 
 # Slack API; slackapi/slack-github-action notifications.
 slack.com:443
