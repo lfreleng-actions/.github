@@ -314,13 +314,23 @@ files 0–100 and reports each finding with severity and location.
   severity/rule breakdowns and the top findings, plus inline PR
   annotations for the top findings. No SARIF upload happens on pull
   requests.
-- **Advisory**: the scan step always succeeds; a separate gate step
-  fails the run on findings if the organisation variable
-  **`AISLOP_ENFORCE`** holds `true`. Until then the workflow is
-  purely informational, because repositories across the organisation
-  carry
-  pre-existing issues that need triage before enforcement can switch
-  on. Flipping the variable requires no workflow change.
+- **Gating**: the scan step always succeeds; a separate gate step
+  decides enforcement based on the organisation variable
+  **`AISLOP_GATE_LEVEL`**:
+  - **`high`** (the default when the variable is unset) — the run
+    **fails** when the pull request introduces any **high-severity**
+    finding (an aislop error-severity diagnostic, the `high` rating
+    surfaced in code scanning). Warnings and info stay advisory. This
+    is the estate-wide gate now that the estate carries no outstanding
+    high-severity findings.
+  - **`all`** — the run fails on the full aislop quality gate (score
+    below the configured threshold **or** any high-severity finding).
+    The strictest tier.
+  - **`off`** — advisory: the workflow reports without blocking.
+
+  For backward compatibility, when `AISLOP_GATE_LEVEL` is unset the
+  legacy **`AISLOP_ENFORCE`** `= true` variable still selects the
+  `all` tier. Changing the level requires no workflow change.
 - **Version pin**: the aislop CLI version pin lives in
   `aislop-scan-action` (its bundled `package.json` / `package-lock.json`);
   bump it there via a PR and release, then update the action pin here.
@@ -345,13 +355,13 @@ ruleset, mirroring the zizmor audit:
    - **Repository**: `lfreleng-actions/.github`
    - **Workflow file path**: `.github/workflows/aislop.yaml`
    - **Ref**: `main`
-5. For the initial advisory rollout, leave **Do not require
-   workflows to pass before merging** *checked* so the workflow runs
-   without blocking merges (advisory mode is also reinforced by the
-   gate step, which passes unless `AISLOP_ENFORCE` is `true`). Later,
-   after the team clears the backlog, uncheck this option **and** set
-   the `AISLOP_ENFORCE` organisation variable to `true` to make the
-   check merge-blocking.
+5. The `high` gate level is the default, so the check blocks a merge
+   whenever a pull request introduces a high-severity finding once you
+   enable **Require workflows to pass before merging**. To report
+   without blocking first, either leave **Do not require workflows
+   to pass before merging** *checked* or set the `AISLOP_GATE_LEVEL`
+   organisation variable to `off`; raise it to `all` to also enforce
+   the score threshold.
 6. Click **Create**.
 
 After saving, every pull request opened in the organisation will
