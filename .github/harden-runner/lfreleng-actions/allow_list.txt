@@ -125,27 +125,36 @@ files.pythonhosted.org:443
 # Mozilla release archive, fetched by python-build-action.
 ftp.mozilla.org:443
 
-# Gerrit (Automotive Linux): git clone via gerrit-clone-action.
+# Gerrit (Automotive Linux): git clone via gerrit-clone-action
+# (HTTPS); git-over-SSH clone, review voting and ssh-keyscan (SSH).
+gerrit.automotivelinux.org:29418
 gerrit.automotivelinux.org:443
 
-# Gerrit (FD.io): git clone via gerrit-clone-action.
+# Gerrit (FD.io): git clone via gerrit-clone-action (HTTPS);
+# git-over-SSH clone, review voting and ssh-keyscan (SSH).
+gerrit.fd.io:29418
 gerrit.fd.io:443
 
-# Gerrit (LF Broadband): git clone via gerrit-clone-action.
+# Gerrit (LF Broadband): git clone via gerrit-clone-action (HTTPS);
+# git-over-SSH clone, review voting and ssh-keyscan (SSH).
+gerrit.lfbroadband.org:29418
 gerrit.lfbroadband.org:443
 
-# Gerrit (Linux Foundation): git clone via gerrit-clone-action.
+# Gerrit (Linux Foundation): git clone via gerrit-clone-action
+# (HTTPS); git-over-SSH clone, review voting and ssh-keyscan (SSH).
+gerrit.linuxfoundation.org:29418
 gerrit.linuxfoundation.org:443
 
-# Gerrit (O-RAN-SC) SSH port: git-over-SSH clone and ssh-keyscan.
+# Gerrit (O-RAN-SC): git clone via gerrit-clone-action and
+# python-test-action (HTTPS); git-over-SSH clone, review voting and
+# ssh-keyscan (SSH).
 gerrit.o-ran-sc.org:29418
-
-# Gerrit (O-RAN-SC) HTTPS: git clone via gerrit-clone-action and
-# python-test-action.
 gerrit.o-ran-sc.org:443
 
 # Gerrit (ONAP): git clone via gerrit-clone-action and
-# python-test-action.
+# python-test-action (HTTPS); git-over-SSH clone, review voting and
+# ssh-keyscan (SSH).
+gerrit.onap.org:29418
 gerrit.onap.org:443
 
 # Anchore installer (grype download for anchore/scan-action).
@@ -158,7 +167,9 @@ get.helm.sh:443
 ghcr.io:443
 
 # Gerrit (OpenDaylight): git clone via gerrit-clone-action and
-# python-test-action.
+# python-test-action (HTTPS); git-over-SSH clone, review voting and
+# ssh-keyscan (SSH).
+git.opendaylight.org:29418
 git.opendaylight.org:443
 
 # GitHub SSH: git-over-SSH checkout in python-test-action.
