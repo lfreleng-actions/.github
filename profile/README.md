@@ -136,7 +136,6 @@ with signed tags and provenance attestations.
 | [credential-load-action]         | Retrieve project/repository specific credentials from a 1Password vault |
 | [harden-runner-block-action]     | Load an egress allow-list for step-security/harden-runner block mode    |
 | [sigul-sign-docker]              | Sign build packages, artefacts, and git tags using Sigul                |
-| [spdx-verify-action]             | Verify files contain the required SPDX license headers                  |
 | [sonarqube-cloud-scan-action]    | Perform a SonarQube Cloud scan and upload the results                   |
 | [sonatype-lifecycle-scan-action] | Run a Sonatype Lifecycle (Nexus IQ) scan                                |
 | [zizmor-scan-action]             | Audit GitHub Actions workflows for security defects with zizmor         |
@@ -153,12 +152,10 @@ with signed tags and provenance attestations.
 | [repository-content-action]        | Scan a repository for different content types                       |
 | [repository-tags]                  | Fetch tags, count them, identify the latest tag, and determine type |
 | [build-metadata-action]            | Capture and verify comprehensive build metadata across languages    |
-| [project-name-action]              | Compare project name to GitHub repository name                      |
 | [openssf-scorecard-summary-action] | Generate OpenSSF Scorecard summary output with report URL           |
 | [pinned-versions-action]           | Verify action/workflow calls use pinned SHA commit values           |
 | [standalone-linting-action]        | Run linting tools that do not run under pre-commit.ci               |
 | [gha-workflow-linter]              | Lint and verify GitHub workflow/action calls                        |
-| [action-semantic-pull-request]     | Ensure PR titles match the Conventional Commits specification       |
 | [change-isolation-action]          | Verify a change isolates edits to gitignore-style path patterns     |
 | [aislop-scan-action]               | Scan a repository with the aislop AI-slop/code-quality scanner      |
 
@@ -196,7 +193,6 @@ with signed tags and provenance attestations.
 | ------------------------------- | -------------------------------------------------------------------------- |
 | [project-reporting-tool]        | Comprehensive multi-repository analysis tool for Linux Foundation projects |
 | [project-reporting-artifacts]   | Generated reports and data artefacts from the Project Reporting Tool       |
-| [github-report]                 | GitHub organisation posture reporting                                      |
 | [github-network-audit]          | Build harden-runner egress allowlists from StepSecurity endpoint data      |
 | [github-security-report-action] | Security and quality reporting across GitHub organisations                 |
 
@@ -235,11 +231,7 @@ verify the actions and workflows in this organisation:
 | [test-maven-project]                | Sample Maven project used for testing actions           |
 | [test-docker-project]               | Sample project that builds a Docker image               |
 | [test-makefile-helm-chart]          | Template Makefile for building a sample Helm Chart      |
-| [test-deploy-gerrit]                | Gerrit server connectivity and pull-replication testing |
 | [test-http-api-tool]                | Workflow tests for the HTTP API testing tool            |
-| [test-pypi-publish-action]          | PyPI publishing workflow tests                          |
-| [test-python-audit-action]          | Python dependency audit workflow tests                  |
-| [test-draft-release-promote-action] | Draft release promotion workflow tests                  |
 | [test-release-process]              | End-to-end release workflow testing                     |
 | [test-tags-semantic]                | SemVer tag signature test fixtures                      |
 | [test-tags-calver]                  | CalVer tag signature test fixtures                      |
@@ -444,7 +436,6 @@ to all repositories unless otherwise stated.
 [credential-load-action]: https://github.com/lfreleng-actions/credential-load-action
 [harden-runner-block-action]: https://github.com/lfreleng-actions/harden-runner-block-action
 [sigul-sign-docker]: https://github.com/lfreleng-actions/sigul-sign-docker
-[spdx-verify-action]: https://github.com/lfreleng-actions/spdx-verify-action
 [sonarqube-cloud-scan-action]: https://github.com/lfreleng-actions/sonarqube-cloud-scan-action
 [sonatype-lifecycle-scan-action]: https://github.com/lfreleng-actions/sonatype-lifecycle-scan-action
 [zizmor-scan-action]: https://github.com/lfreleng-actions/zizmor-scan-action
@@ -454,12 +445,10 @@ to all repositories unless otherwise stated.
 [repository-content-action]: https://github.com/lfreleng-actions/repository-content-action
 [repository-tags]: https://github.com/lfreleng-actions/repository-tags
 [build-metadata-action]: https://github.com/lfreleng-actions/build-metadata-action
-[project-name-action]: https://github.com/lfreleng-actions/project-name-action
 [openssf-scorecard-summary-action]: https://github.com/lfreleng-actions/openssf-scorecard-summary-action
 [pinned-versions-action]: https://github.com/lfreleng-actions/pinned-versions-action
 [standalone-linting-action]: https://github.com/lfreleng-actions/standalone-linting-action
 [gha-workflow-linter]: https://github.com/lfreleng-actions/gha-workflow-linter
-[action-semantic-pull-request]: https://github.com/lfreleng-actions/action-semantic-pull-request
 [change-isolation-action]: https://github.com/lfreleng-actions/change-isolation-action
 [aislop-scan-action]: https://github.com/lfreleng-actions/aislop-scan-action
 
@@ -483,7 +472,6 @@ to all repositories unless otherwise stated.
 <!-- Reporting Tools -->
 [project-reporting-tool]: https://github.com/lfreleng-actions/project-reporting-tool
 [project-reporting-artifacts]: https://github.com/lfreleng-actions/project-reporting-artifacts
-[github-report]: https://github.com/lfreleng-actions/github-report
 [github-network-audit]: https://github.com/lfreleng-actions/github-network-audit
 [github-security-report-action]: https://github.com/lfreleng-actions/github-security-report-action
 
@@ -502,11 +490,7 @@ to all repositories unless otherwise stated.
 [test-maven-project]: https://github.com/lfreleng-actions/test-maven-project
 [test-docker-project]: https://github.com/lfreleng-actions/test-docker-project
 [test-makefile-helm-chart]: https://github.com/lfreleng-actions/test-makefile-helm-chart
-[test-deploy-gerrit]: https://github.com/lfreleng-actions/test-deploy-gerrit
 [test-http-api-tool]: https://github.com/lfreleng-actions/test-http-api-tool
-[test-pypi-publish-action]: https://github.com/lfreleng-actions/test-pypi-publish-action
-[test-python-audit-action]: https://github.com/lfreleng-actions/test-python-audit-action
-[test-draft-release-promote-action]: https://github.com/lfreleng-actions/test-draft-release-promote-action
 [test-release-process]: https://github.com/lfreleng-actions/test-release-process
 [test-tags-semantic]: https://github.com/lfreleng-actions/test-tags-semantic
 [test-tags-calver]: https://github.com/lfreleng-actions/test-tags-calver
