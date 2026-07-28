@@ -33,6 +33,8 @@ with signed tags and provenance attestations.
 | [gradle-build-action]         | Set up a specific JDK version and run a Gradle build          |
 | [maven-build-action]          | Set up Maven and build a Java project                         |
 | [maven-make-build-action]     | Set up Maven and run make                                     |
+| [maven-xml-settings-action]   | Create Maven XML settings files for build and publish jobs    |
+| [junit-test-report-action]    | Summarise JUnit XML test results in the workflow job summary  |
 | [node-build-action]           | Set up Node.js and build a project with npm or yarn           |
 | [node-audit-action]           | Audit Node.js dependencies for known security vulnerabilities |
 | [go-build-action]             | Build a Go project with optional cross-compilation support    |
@@ -105,6 +107,7 @@ with signed tags and provenance attestations.
 | [tag-push-verify-action]                | Verify a workflow trigger was a tag push of a given type              |
 | [python-project-tag-push-verify-action] | Check a pushed tag matches the declared Python project version        |
 | [version-extract-action]                | Extract version strings from supported software project types         |
+| [semantic-tag-increment]                | Generate an incremented tag from a tag and increment level            |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -180,6 +183,7 @@ with signed tags and provenance attestations.
 | [github-list-releases-action]  | Return a list of releases for a GitHub repository                  |
 | [http-api-tool-docker]         | Test HTTP/HTTPS API endpoints for service availability             |
 | [go-httpbin-action]            | Create a local go-httpbin service with HTTPS support               |
+| [docker-save-images-action]    | Upload Docker images as artefacts to workflow runs                 |
 | [hw-bom-javascript]            | Generate a hardware bill of materials                              |
 
 <!-- markdownlint-enable MD013 -->
@@ -205,11 +209,14 @@ configurations that projects can call directly:
 
 <!-- markdownlint-disable MD013 -->
 
-| Repository         | Description                                                             |
-| ------------------ | ----------------------------------------------------------------------- |
-| [python-workflows] | Reusable build, test, and release workflows for Python projects         |
-| [go-workflows]     | Reusable build, test, and release workflows for Go projects             |
-| [node-workflows]   | Reusable build, test, audit, and release workflows for Node.js projects |
+| Repository           | Description                                                             |
+| -------------------- | ----------------------------------------------------------------------- |
+| [python-workflows]   | Reusable build, test, and release workflows for Python projects         |
+| [go-workflows]       | Reusable build, test, and release workflows for Go projects             |
+| [node-workflows]     | Reusable build, test, audit, and release workflows for Node.js projects |
+| [java-workflows]     | Reusable build, test, and release workflows for Java projects           |
+| [generic-workflows]  | Language-agnostic reusable workflows, including tag-driven release      |
+| [security-workflows] | Security and code auditing focussed reusable workflows                  |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -225,6 +232,7 @@ verify the actions and workflows in this organisation:
 | [test-python-project]               | Sample Python project (Typer CLI)                       |
 | [test-go-project]                   | Sample Go project (calculator CLI)                      |
 | [test-node-project]                 | Sample Node.js project (Express HTTP server)            |
+| [test-maven-project]                | Sample Maven project used for testing actions           |
 | [test-docker-project]               | Sample project that builds a Docker image               |
 | [test-makefile-helm-chart]          | Template Makefile for building a sample Helm Chart      |
 | [test-deploy-gerrit]                | Gerrit server connectivity and pull-replication testing |
@@ -375,6 +383,8 @@ to all repositories unless otherwise stated.
 [gradle-build-action]: https://github.com/lfreleng-actions/gradle-build-action
 [maven-build-action]: https://github.com/lfreleng-actions/maven-build-action
 [maven-make-build-action]: https://github.com/lfreleng-actions/maven-make-build-action
+[maven-xml-settings-action]: https://github.com/lfreleng-actions/maven-xml-settings-action
+[junit-test-report-action]: https://github.com/lfreleng-actions/junit-test-report-action
 [node-build-action]: https://github.com/lfreleng-actions/node-build-action
 [node-audit-action]: https://github.com/lfreleng-actions/node-audit-action
 [go-build-action]: https://github.com/lfreleng-actions/go-build-action
@@ -419,6 +429,7 @@ to all repositories unless otherwise stated.
 [tag-push-verify-action]: https://github.com/lfreleng-actions/tag-push-verify-action
 [python-project-tag-push-verify-action]: https://github.com/lfreleng-actions/python-project-tag-push-verify-action
 [version-extract-action]: https://github.com/lfreleng-actions/version-extract-action
+[semantic-tag-increment]: https://github.com/lfreleng-actions/semantic-tag-increment
 
 <!-- Gerrit Integration Actions -->
 [github2gerrit-action]: https://github.com/lfreleng-actions/github2gerrit-action
@@ -466,6 +477,7 @@ to all repositories unless otherwise stated.
 [github-list-releases-action]: https://github.com/lfreleng-actions/github-list-releases-action
 [http-api-tool-docker]: https://github.com/lfreleng-actions/http-api-tool-docker
 [go-httpbin-action]: https://github.com/lfreleng-actions/go-httpbin-action
+[docker-save-images-action]: https://github.com/lfreleng-actions/docker-save-images-action
 [hw-bom-javascript]: https://github.com/lfreleng-actions/hw-bom-javascript
 
 <!-- Reporting Tools -->
@@ -479,11 +491,15 @@ to all repositories unless otherwise stated.
 [python-workflows]: https://github.com/lfreleng-actions/python-workflows
 [go-workflows]: https://github.com/lfreleng-actions/go-workflows
 [node-workflows]: https://github.com/lfreleng-actions/node-workflows
+[java-workflows]: https://github.com/lfreleng-actions/java-workflows
+[generic-workflows]: https://github.com/lfreleng-actions/generic-workflows
+[security-workflows]: https://github.com/lfreleng-actions/security-workflows
 
 <!-- Test Fixtures & Sample Projects -->
 [test-python-project]: https://github.com/lfreleng-actions/test-python-project
 [test-go-project]: https://github.com/lfreleng-actions/test-go-project
 [test-node-project]: https://github.com/lfreleng-actions/test-node-project
+[test-maven-project]: https://github.com/lfreleng-actions/test-maven-project
 [test-docker-project]: https://github.com/lfreleng-actions/test-docker-project
 [test-makefile-helm-chart]: https://github.com/lfreleng-actions/test-makefile-helm-chart
 [test-deploy-gerrit]: https://github.com/lfreleng-actions/test-deploy-gerrit
