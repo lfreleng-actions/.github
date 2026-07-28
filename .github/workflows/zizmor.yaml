@@ -19,10 +19,10 @@
 #
 # Mode: SARIF. zizmor itself exits 0 in SARIF mode (exit codes 11+ are
 # suppressed for SARIF consumers), so a dedicated gate step evaluates the
-# report and fails the run when it holds any finding at low severity or
-# higher. Informational findings do not block: the audit's 'low'
-# severity floor keeps them out of the SARIF entirely, so everything
-# that reaches the gate is a genuine low-or-higher finding.
+# report and fails the run when it holds any finding at all. The audit
+# runs with an 'informational' floor, so every finding zizmor can report
+# reaches the SARIF and the gate blocks on all of them regardless of
+# tier.
 #
 # This workflow does NOT publish to code scanning. The scheduled
 # zizmor-sarif-publish.yaml workflow is the single source of
@@ -81,36 +81,35 @@ jobs:
         # yamllint disable-line rule:line-length
         uses: lfreleng-actions/zizmor-scan-action@7c402cb62001f13700324e68e841c772571a26c2  # v0.5.0
         with:
-          # Broad coverage with a sensible floor: the auditor persona
-          # surfaces the widest set of audits and a low severity floor
-          # reports findings down to the low tier (informational and
-          # unknown stay out to limit noise). Set explicitly so the breadth
-          # does not depend on the pinned action's defaults.
+          # Maximum coverage: the auditor persona surfaces the widest set
+          # of audits, and an informational floor reports every finding
+          # zizmor can produce. Set explicitly so the breadth does not
+          # depend on the pinned action's defaults.
           #
           # Keep these settings identical to the scheduled publisher
           # (zizmor-sarif-publish.yaml) so the default-branch code
-          # scanning posture and this gate always agree. The 'low' floor
-          # also underpins the gate below and downstream SARIF decoding
-          # (e.g. the github-security-report tool): zizmor emits Low AND
-          # Informational findings at SARIF level note, so only the
-          # floor guarantees that a note in the report is a genuine Low
-          # finding. Do not lower the floor to 'informational' without
-          # reworking the gate and the downstream severity mapping.
+          # scanning posture and this gate always agree.
+          #
+          # zizmor emits both Low and Informational findings at SARIF
+          # level 'note', so a note no longer implies a genuine Low
+          # finding. That collision is deliberate and harmless here: the
+          # gate below blocks on any finding whatever its level, and the
+          # downstream github-security-report tool reports zizmor
+          # findings from informational upwards, so nothing is hidden.
           persona: 'auditor'
-          min-severity: 'low'
+          min-severity: 'informational'
 
-      - name: 'Fail on findings (low severity or higher)'
+      - name: 'Fail on any finding'
         shell: 'bash'
         env:
           ZIZMOR_SARIF: ${{ steps.audit.outputs['sarif-file'] }}
         run: |
           set -euo pipefail
           # zizmor maps severities onto SARIF levels: error=High,
-          # warning=Medium, note=Low or Info, none=Info (not currently
-          # emitted). The audit above runs with a 'low' severity floor,
-          # so informational findings never reach the SARIF and every
-          # note here is a genuine Low finding; fail the run on any
-          # note-or-higher result.
+          # warning=Medium, note=Low or Informational, none=Informational.
+          # The audit above runs with an 'informational' floor, so every
+          # finding zizmor can report reaches the SARIF; fail the run on
+          # any of them, at any level.
           if [ ! -f "${ZIZMOR_SARIF}" ]; then
             echo "::error::zizmor SARIF report not found: ${ZIZMOR_SARIF}"
             exit 1
@@ -120,7 +119,7 @@ jobs:
           # code at column 0. Do not re-indent them.
           n="$(python3 -c '
           import json, os
-          BLOCK = {"error", "warning", "note"}
+          BLOCK = {"error", "warning", "note", "none"}
           path = os.environ["ZIZMOR_SARIF"]
           with open(path, encoding="utf-8") as fh:
               data = json.load(fh)
@@ -139,9 +138,9 @@ jobs:
                       count += 1
           print(count)
           ')"
-          echo "zizmor reported ${n} finding(s) at low severity or higher"
+          echo "zizmor reported ${n} finding(s)"
           if [ "${n}" -gt 0 ]; then
-            echo "::error::zizmor: ${n} finding(s) at low severity or higher"
+            echo "::error::zizmor: ${n} finding(s) reported"
             exit 1
           fi
-          echo 'No low-or-higher findings; passing.'
+          echo 'No findings; passing.'

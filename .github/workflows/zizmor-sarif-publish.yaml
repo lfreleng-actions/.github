@@ -145,22 +145,23 @@ jobs:
         # yamllint disable-line rule:line-length
         uses: lfreleng-actions/zizmor-scan-action@7c402cb62001f13700324e68e841c772571a26c2  # v0.5.0
         with:
-          # Broad coverage with a sensible floor: the auditor persona
-          # surfaces the widest set of audits and a low severity floor
-          # reports findings down to the low tier (informational and
-          # unknown stay out to limit noise). Set explicitly so the breadth
-          # does not depend on the pinned action's defaults.
+          # Maximum coverage: the auditor persona surfaces the widest set
+          # of audits, and an informational floor reports every finding
+          # zizmor can produce. Set explicitly so the breadth does not
+          # depend on the pinned action's defaults.
           #
           # Keep these settings identical to the ruleset-enforced PR gate
-          # (zizmor.yaml): the gate blocks on SARIF level note-and-above,
-          # and consumers of the published SARIF (e.g. the
-          # github-security-report tool) decode note as Low. Both only
-          # hold while the floor is 'low', because zizmor emits Low AND
-          # Informational findings at SARIF level note: lowering the
-          # floor to 'informational' would let informational findings
-          # into the SARIF where they are indistinguishable from Low.
+          # (zizmor.yaml), which blocks on any finding at any level, so
+          # the published code-scanning posture and the gate agree.
+          #
+          # zizmor emits both Low and Informational findings at SARIF
+          # level 'note', so a published note alert may be either. The
+          # github-security-report tool consumes the code-scanning alerts
+          # API, which exposes only the SARIF level and not zizmor's own
+          # severity property, so it reports zizmor findings from
+          # informational upwards rather than trying to separate them.
           persona: 'auditor'
-          min-severity: 'low'
+          min-severity: 'informational'
           # Label the step summary with the repository under audit
           # rather than the .github repository running this workflow.
           # yamllint disable-line rule:line-length
