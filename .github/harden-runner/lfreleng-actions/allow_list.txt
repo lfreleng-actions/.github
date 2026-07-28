@@ -105,6 +105,12 @@ dl-cdn.alpinelinux.org:443
 # python-build-action.
 dl.google.com:443
 
+# Yarn (classic) release downloads and the Yarn APT/RPM repo. Named
+# alongside the npm and Yarn registries in Yarn's documented
+# corporate-firewall allow-list; reached when Yarn itself is fetched
+# or upgraded (e.g. 'yarn set version', Corepack, distro packages).
+dl.yarnpkg.com:443
+
 # SonarQube scanner data bucket (AWS S3); reached by the Sonar
 # scanner via sonarqube-cloud-scan-action.
 dna-visualization-scannerdata-eu-central-1-prod.s3.amazonaws.com:443
@@ -385,6 +391,10 @@ registry-1.docker.io:443
 # npm registry: node-build-action, node-audit-action,
 # path-check-action and aislop-scan-action.
 registry.npmjs.org:443
+
+# Yarn (classic) registry: 'yarn install' in node-build-action and
+# the node-workflows build/test/audit jobs for Yarn-based projects.
+registry.yarnpkg.com:443
 
 # Astral uv release downloads (uv installer).
 releases.astral.sh:443
