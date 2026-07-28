@@ -73,6 +73,9 @@ app-updates.agilebits.com:443
 # (e.g. gerrit-clone-action, python-sbom-action).
 astral.sh:443
 
+# Artifactory (ASWF); LF project artifact repository.
+aswf.jfrog.io:443
+
 # Docker Hub registry auth, used by docker buildx/build-push and helm.
 auth.docker.io:443
 
@@ -106,6 +109,18 @@ dl.google.com:443
 # scanner via sonarqube-cloud-scan-action.
 dna-visualization-scannerdata-eu-central-1-prod.s3.amazonaws.com:443
 
+# Project documentation sites; ReadTheDocs-backed docs published
+# by release engineering doc jobs.
+docs.anuket.io:443
+docs.automotivelinux.org:443
+docs.edgexfoundry.org:443
+docs.o-ran-sc.org:443
+docs.onap.org:443
+docs.opendaylight.org:443
+docs.releng.linuxfoundation.org:443
+docs.voltha.org:443
+docs.zowe.org:443
+
 # endoflife.date API, queried by build-metadata-action for runtime
 # end-of-life data.
 endoflife.date:443
@@ -117,6 +132,9 @@ esm.ubuntu.com:443
 # PostHog EU ingestion endpoint; the AI slop scan workflows
 # (aislop-scan-action) send telemetry here.
 eu.i.posthog.com:443
+
+# FD.io project site; hosts the documentation entry point.
+fd.io:443
 
 # Python package files (PyPI CDN): pip/uv wheel and sdist downloads
 # across org CI.
@@ -157,6 +175,11 @@ gerrit.o-ran-sc.org:443
 gerrit.onap.org:29418
 gerrit.onap.org:443
 
+# Gerrit (Anuket/OPNFV): git clone via gerrit-clone-action (HTTPS);
+# git-over-SSH clone, review voting and ssh-keyscan (SSH).
+gerrit.opnfv.org:29418
+gerrit.opnfv.org:443
+
 # Anchore installer (grype download for anchore/scan-action).
 get.anchore.io:443
 
@@ -178,8 +201,23 @@ github.com:22
 # GitHub over HTTPS: git/LFS clone, releases and API across org CI.
 github.com:443
 
+# GitLab; Anuket CI pipelines and source mirror.
+gitlab.com:443
+
 # Grype vulnerability DB (anchore/scan-action/download-grype).
 grype.anchore.io:443
+
+# Docker Hub web/registry front end; project image listings.
+hub.docker.com:443
+
+# ReadTheDocs-hosted Hyperledger Fabric documentation.
+hyperledger-fabric.readthedocs.io:443
+
+# Artifactory (Hyperledger); LF project artifact repository.
+hyperledger.jfrog.io:443
+
+# Jenkins CI (EdgeX); LF project infrastructure.
+jenkins.edgexfoundry.org:443
 
 # Jenkins CI (FD.io); LF project infrastructure reached by org CI.
 jenkins.fd.io:443
@@ -196,6 +234,12 @@ jenkins.onap.org:443
 # Jenkins CI (OpenDaylight); LF project infrastructure.
 jenkins.opendaylight.org:443
 
+# Jira (Akraino); LF project issue tracker.
+jira.akraino.org:443
+
+# Jira (Automotive Linux); LF project issue tracker.
+jira.automotivelinux.org:443
+
 # Jira (Linux Foundation); LF project issue tracker.
 jira.linuxfoundation.org:443
 
@@ -208,6 +252,9 @@ jira.onap.org:443
 # Jira (OpenDaylight); LF project issue tracker.
 jira.opendaylight.org:443
 
+# Jira (Anuket/OPNFV); LF project issue tracker.
+jira.opnfv.org:443
+
 # OpenPGP keyserver; GPG public-key fetch via dirmngr during
 # package/signature verification.
 keys.openpgp.org:443
@@ -215,6 +262,12 @@ keys.openpgp.org:443
 # Ubuntu GPG keyserver; public-key fetch via dirmngr, also reached
 # by the Sonar scanner (sonarqube-cloud-scan-action).
 keyserver.ubuntu.com:443
+
+# Jira Cloud (LF Aether tenant); LF project issue tracker.
+lf-aether.atlassian.net:443
+
+# Jira Cloud (LF Broadband tenant); issue tracker and wiki.
+lf-broadband.atlassian.net:443
 
 # Jira Cloud (LF O-RAN-SC tenant); LF project issue tracker.
 lf-o-ran-sc.atlassian.net:443
@@ -231,21 +284,72 @@ linuxfoundation.1password.com:443
 # Linux Foundation website (wget fetches).
 linuxfoundation.org:443
 
+# Build log servers; job artifacts and console logs published by
+# release engineering jobs.
+logs.edgexfoundry.org:443
+logs.o-ran-sc.org:443
+logs.onap.org:443
+logs.opendaylight.org:443
+
 # Ubuntu message-of-the-day service (runner OS).
 motd.ubuntu.com:443
+
+# Nexus artifact repository (EdgeX); LF project artifacts.
+nexus.edgexfoundry.org:443
+
+# Nexus artifact repository (O-RAN-SC); LF project artifacts.
+nexus.o-ran-sc.org:443
 
 # Nexus artifact repository (ONAP); LF project artifacts (Java/Python).
 nexus.onap.org:443
 
-# Nexus3 artifact repository (O-RAN-SC); LF project artifacts.
+# Nexus artifact repository (OpenDaylight); LF project artifacts.
+nexus.opendaylight.org:443
+
+# Nexus3 artifact repository (EdgeX); LF project artifacts, plus
+# the Docker registries on 10001-10004.
+nexus3.edgexfoundry.org:10001
+nexus3.edgexfoundry.org:10002
+nexus3.edgexfoundry.org:10003
+nexus3.edgexfoundry.org:10004
+nexus3.edgexfoundry.org:443
+
+# Nexus3 artifact repository (O-RAN-SC); LF project artifacts, plus
+# the Docker registries on 10001-10004.
+nexus3.o-ran-sc.org:10001
+nexus3.o-ran-sc.org:10002
+nexus3.o-ran-sc.org:10003
+nexus3.o-ran-sc.org:10004
 nexus3.o-ran-sc.org:443
+
+# Nexus3 artifact repository (ONAP); LF project artifacts, plus
+# the Docker registries on 10001-10004.
+nexus3.onap.org:10001
+nexus3.onap.org:10002
+nexus3.onap.org:10003
+nexus3.onap.org:10004
+nexus3.onap.org:443
+
+# Nexus3 artifact repository (OpenDaylight); LF project artifacts, plus
+# the Docker registries on 10001-10004.
+nexus3.opendaylight.org:10001
+nexus3.opendaylight.org:10002
+nexus3.opendaylight.org:10003
+nexus3.opendaylight.org:10004
+nexus3.opendaylight.org:443
 
 # 1Password vault (O-RAN-SC tenant); secret retrieval via the op CLI.
 o-ran-sc.1password.com:443
 
+# Artifactory (ODPi); LF project artifact repository.
+odpi.jfrog.io:443
+
 # OSS-Fuzz build-log bucket, queried by the Scorecard 'Fuzzing'
 # check (ossf/scorecard-action).
 oss-fuzz-build-logs.storage.googleapis.com:443
+
+# packagecloud.io; FD.io package repository (deb/rpm).
+packagecloud.io:443
 
 # Microsoft package archive over apt (go-httpbin-action,
 # python-build-action).
@@ -272,6 +376,9 @@ proxy.golang.org:443
 # Python Package Index: pip/uv installs across org CI.
 pypi.org:443
 
+# ReadTheDocs; documentation build and publish API.
+readthedocs.org:443
+
 # Docker Hub registry: docker build-push and helm image pulls.
 registry-1.docker.io:443
 
@@ -287,6 +394,9 @@ repo.maven.apache.org:443
 
 # Maven Central (repo1); Java dependency downloads.
 repo1.maven.org:443
+
+# Build log storage (FD.io); S3-backed job logs.
+s3-logs.fd.io:443
 
 # Gradle distribution and wrapper checksums (Gradle Wrapper,
 # gradle/actions/setup-gradle). Distribution downloads 302-redirect
@@ -336,6 +446,21 @@ uploads.github.com:443
 # Go vulnerability DB via govulncheck (go-audit-action).
 vuln.go.dev:443
 
+# Project wikis (Confluence and MediaWiki); LF project
+# collaboration spaces.
+wiki.akraino.org:443
+wiki.anuket.io:443
+wiki.aswf.io:443
+wiki.automotivelinux.org:443
+wiki.edgexfoundry.org:443
+wiki.fd.io:443
+wiki.hyperledger.org:443
+wiki.lfedge.org:443
+wiki.o-ran-sc.org:443
+wiki.onap.org:443
+wiki.opendaylight.org:443
+wiki.openmainframeproject.org:443
+
 # OpenSSF Best Practices badge service, queried by the Scorecard
 # 'CII-Best-Practices' check (ossf/scorecard-action).
 www.bestpractices.dev:443
@@ -345,3 +470,6 @@ www.google.com:443
 
 # Linux Foundation website (wget fetches).
 www.linuxfoundation.org:443
+
+# Artifactory (Zowe); LF project artifact repository.
+zowe.jfrog.io:443
