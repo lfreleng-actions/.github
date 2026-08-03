@@ -139,12 +139,69 @@ jobs:
             NOTIFY="false"
           fi
 
+          # The Slack payload below is YAML, so a multi-line value
+          # cannot be interpolated into a quoted scalar: the second and
+          # subsequent lines land at column zero and js-yaml rejects the
+          # payload with "deficient indentation". Build a single-line
+          # form instead, joining entries with literal backslash-n
+          # escape sequences that YAML expands back into newlines when
+          # parsed.
+          #
+          # Slack rejects a section text element longer than 3000
+          # characters, so cap the list on both entry count and rendered
+          # length. The budget below leaves headroom for the code fences
+          # and the truncation notice appended afterwards. Costs are
+          # measured on the unescaped name, plus the newline separator
+          # for every entry after the first, which is what Slack
+          # renders.
+          MAX_SLACK_ENTRIES=50
+          MAX_SLACK_CHARS=2500
+          SLACK_LIST=""
+          SLACK_CHARS=0
+          SHOWN=0
+
+          while IFS= read -r REPO; do
+            [ -z "$REPO" ] && continue
+
+            if [ "$SHOWN" -ge "$MAX_SLACK_ENTRIES" ]; then
+              break
+            fi
+
+            if [ "$SHOWN" -eq 0 ]; then
+              COST=${#REPO}
+            else
+              COST=$(( ${#REPO} + 1 ))
+            fi
+            if [ $((SLACK_CHARS + COST)) -gt "$MAX_SLACK_CHARS" ]; then
+              break
+            fi
+
+            # Escape characters that would otherwise terminate or
+            # corrupt the quoted YAML scalar
+            ENTRY="${REPO//\\/\\\\}"
+            ENTRY="${ENTRY//\"/\\\"}"
+
+            if [ "$SHOWN" -eq 0 ]; then
+              SLACK_LIST="${ENTRY}"
+            else
+              SLACK_LIST="${SLACK_LIST}\\n${ENTRY}"
+            fi
+
+            SLACK_CHARS=$((SLACK_CHARS + COST))
+            SHOWN=$((SHOWN + 1))
+          done <<< "$UNDOCUMENTED"
+
+          if [ "$COUNT" -gt "$SHOWN" ]; then
+            SLACK_LIST="${SLACK_LIST}\\n... and $((COUNT - SHOWN)) more"
+          fi
+
+          # printf, not echo: slack_list intentionally carries literal
+          # backslash-n sequences and some echo implementations expand
+          # them, which would break the single-line output contract.
           {
-            echo "notify=${NOTIFY}"
-            echo "count=${COUNT}"
-            echo 'undocumented<<UNDOC_EOF'
-            echo "$UNDOCUMENTED"
-            echo 'UNDOC_EOF'
+            printf 'notify=%s\n' "$NOTIFY"
+            printf 'count=%s\n' "$COUNT"
+            printf 'slack_list=%s\n' "$SLACK_LIST"
           } >> "$GITHUB_OUTPUT"
 
           # Write job summary
@@ -201,7 +258,7 @@ jobs:
               - type: "section"
                 text:
                   type: "mrkdwn"
-                  text: "```${{ steps.compare.outputs.undocumented }}```"
+                  text: "```${{ steps.compare.outputs.slack_list }}```"
               - type: "section"
                 text:
                   type: "mrkdwn"
