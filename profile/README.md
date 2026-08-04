@@ -211,6 +211,7 @@ configurations that projects can call directly:
 | [go-workflows]       | Reusable build, test, and release workflows for Go projects             |
 | [node-workflows]     | Reusable build, test, audit, and release workflows for Node.js projects |
 | [java-workflows]     | Reusable build, test, and release workflows for Java projects           |
+| [docker-workflows]   | Reusable build and publish workflows for Docker container images        |
 | [generic-workflows]  | Language-agnostic reusable workflows, including tag-driven release      |
 | [security-workflows] | Security and code auditing focussed reusable workflows                  |
 
@@ -223,19 +224,20 @@ verify the actions and workflows in this organisation:
 
 <!-- markdownlint-disable MD013 -->
 
-| Repository                          | Purpose                                                 |
-| ----------------------------------- | ------------------------------------------------------- |
-| [test-python-project]               | Sample Python project (Typer CLI)                       |
-| [test-go-project]                   | Sample Go project (calculator CLI)                      |
-| [test-node-project]                 | Sample Node.js project (Express HTTP server)            |
-| [test-maven-project]                | Sample Maven project used for testing actions           |
-| [test-docker-project]               | Sample project that builds a Docker image               |
-| [test-makefile-helm-chart]          | Template Makefile for building a sample Helm Chart      |
-| [test-http-api-tool]                | Workflow tests for the HTTP API testing tool            |
-| [test-release-process]              | End-to-end release workflow testing                     |
-| [test-tags-semantic]                | SemVer tag signature test fixtures                      |
-| [test-tags-calver]                  | CalVer tag signature test fixtures                      |
-| [github-releases-test-fixture]      | Frozen release fixture for github-list-releases-action  |
+| Repository                     | Purpose                                                |
+| ------------------------------ | ------------------------------------------------------ |
+| [test-python-project]          | Sample Python project (Typer CLI)                      |
+| [test-go-project]              | Sample Go project (calculator CLI)                     |
+| [test-node-project]            | Sample Node.js project (Express HTTP server)           |
+| [test-maven-project]           | Sample Maven project used for testing actions          |
+| [test-docker-project]          | Sample project that builds a Docker image              |
+| [test-docker-monorepo]         | Multi-image Docker monorepo with same-repo FROM chains |
+| [test-makefile-helm-chart]     | Template Makefile for building a sample Helm Chart     |
+| [test-http-api-tool]           | Workflow tests for the HTTP API testing tool           |
+| [test-release-process]         | End-to-end release workflow testing                    |
+| [test-tags-semantic]           | SemVer tag signature test fixtures                     |
+| [test-tags-calver]             | CalVer tag signature test fixtures                     |
+| [github-releases-test-fixture] | Frozen release fixture for github-list-releases-action |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -480,6 +482,7 @@ to all repositories unless otherwise stated.
 [go-workflows]: https://github.com/lfreleng-actions/go-workflows
 [node-workflows]: https://github.com/lfreleng-actions/node-workflows
 [java-workflows]: https://github.com/lfreleng-actions/java-workflows
+[docker-workflows]: https://github.com/lfreleng-actions/docker-workflows
 [generic-workflows]: https://github.com/lfreleng-actions/generic-workflows
 [security-workflows]: https://github.com/lfreleng-actions/security-workflows
 
@@ -489,6 +492,7 @@ to all repositories unless otherwise stated.
 [test-node-project]: https://github.com/lfreleng-actions/test-node-project
 [test-maven-project]: https://github.com/lfreleng-actions/test-maven-project
 [test-docker-project]: https://github.com/lfreleng-actions/test-docker-project
+[test-docker-monorepo]: https://github.com/lfreleng-actions/test-docker-monorepo
 [test-makefile-helm-chart]: https://github.com/lfreleng-actions/test-makefile-helm-chart
 [test-http-api-tool]: https://github.com/lfreleng-actions/test-http-api-tool
 [test-release-process]: https://github.com/lfreleng-actions/test-release-process
