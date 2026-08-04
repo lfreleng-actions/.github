@@ -41,8 +41,13 @@
 *.sonarcloud.io:443
 
 # SonarQube analysis sensor cache (AWS S3); reached by the Sonar
-# scanner via sonarqube-cloud-scan-action.
+# scanner via sonarqube-cloud-scan-action. Both endpoint forms are
+# listed: the SDK addresses the bucket regionally
+# (<bucket>.s3.<region>.amazonaws.com) while the global form remains in
+# use, and an allow-list entry matches the host it is given rather than
+# the bucket behind it.
 analysis-sensorcache-eu-central-1-prod.s3.amazonaws.com:443
+analysis-sensorcache-eu-central-1-prod.s3.eu-central-1.amazonaws.com:443
 
 # Eclipse Temurin (Adoptium) JDK metadata/binary API; the temurin
 # default of setup-java (maven-build-action, gradle-build-action).
@@ -112,8 +117,10 @@ dl.google.com:443
 dl.yarnpkg.com:443
 
 # SonarQube scanner data bucket (AWS S3); reached by the Sonar
-# scanner via sonarqube-cloud-scan-action.
+# scanner via sonarqube-cloud-scan-action. Regional and global endpoint
+# forms both listed, as above.
 dna-visualization-scannerdata-eu-central-1-prod.s3.amazonaws.com:443
+dna-visualization-scannerdata-eu-central-1-prod.s3.eu-central-1.amazonaws.com:443
 
 # Project documentation sites; ReadTheDocs-backed docs published
 # by release engineering doc jobs.
@@ -404,6 +411,11 @@ readthedocs.org:443
 
 # Docker Hub registry: docker build-push and helm image pulls.
 registry-1.docker.io:443
+
+# Container registry (Nordix); ONAP integration tests pull
+# onaptest/postgres from here via Testcontainers. It sits outside
+# docker.pull.registry, so the Nexus3 entries do not cover it.
+registry.nordix.org:443
 
 # npm registry: node-build-action, node-audit-action,
 # path-check-action and aislop-scan-action.
