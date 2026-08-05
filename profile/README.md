@@ -328,7 +328,7 @@ The tag push triggers one of two release workflows:
 
 | Workflow                  | Use case                                |
 | ------------------------- | --------------------------------------- |
-| `tag-push.yaml`           | Generic (non-language-specific) actions |
+| `release.yaml`            | Generic (non-language-specific) actions |
 | `build-test-release.yaml` | Python actions that publish to PyPI     |
 
 <!-- markdownlint-enable MD013 -->
@@ -336,10 +336,17 @@ The tag push triggers one of two release workflows:
 > **Note:** These workflows live in each action repository,
 > not in this `.github` repo.
 
-#### Generic action/repository (`tag-push.yaml`)
+#### Generic action/repository (`release.yaml`)
 
-Verifies the tag is valid semver then promotes the
-corresponding draft GitHub release.
+A thin caller that delegates to the release reusable in
+[generic-workflows]. The reusable checks the pushed tag against the
+organisation's release-gating policy, ensures a draft release exists for
+the tag, and then publishes it.
+
+Repositories carried this as `tag-push.yaml` until the logic moved into
+the shared reusable; the name now describes the outcome rather than the
+trigger, and sits beside the `release-drafter.yaml` that creates the
+draft it publishes.
 
 #### Python action/repository (`build-test-release.yaml`)
 
