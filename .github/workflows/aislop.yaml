@@ -90,7 +90,7 @@ jobs:
       - name: 'Run aislop quality gate (changed files)'
         id: 'scan'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/aislop-scan-action@4711aa3b9e4ee82de370a084ff2b6c9daa429ac4  # v0.2.3
+        uses: lfreleng-actions/aislop-scan-action@291d1aea90609bc59149e4e91dfb34b450900dd0  # v0.2.4
         with:
           # On pull_request events the diff base is the PR base branch;
           # on workflow_dispatch fall back to the default branch (an
