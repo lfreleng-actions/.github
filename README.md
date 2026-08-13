@@ -33,6 +33,13 @@ organisation unless overridden at the repository level.
 
 ### Workflows
 
+- **[`allow-list-bump.yaml`](.github/workflows/allow-list-bump.yaml)** —
+  A scheduled (Monday 05:00 UTC) sweep that bumps stale
+  `step-security/harden-runner` egress allow-list pins across the
+  `*-workflows` family and opens a pull request per repository. These
+  pins are values of `config:` and `default:` keys rather than `uses:`
+  references, so Dependabot cannot see them and they drift. See
+  [Allow-list bump sweep](#allow-list-bump-sweep) below for setup.
 - **[`repo-audit.yaml`](.github/workflows/repo-audit.yaml)** — Runs on
   a weekly schedule (Monday 10:00 UTC). Compares the current list of
   repositories in the organisation against the profile README and sends a
@@ -498,6 +505,80 @@ two scanners can diverge at run time without editing the shared JSON.
 
 The workflow merges the variable patterns with the organisation's JSON
 lists before matching.
+
+### Allow-list bump sweep
+
+The workflow-repo family pins the `step-security/harden-runner` egress
+allow-list with a custom `uses:`-style coordinate consumed by
+[`harden-runner-block-action`][hrba]:
+
+[hrba]: https://github.com/lfreleng-actions/harden-runner-block-action
+
+<!-- markdownlint-disable MD013 -->
+
+```yaml
+config: '@18d9c4446bea555d0783e850f6d295f844fe8f67'  # v0.1.1
+```
+
+<!-- markdownlint-enable MD013 -->
+
+Because these are values of `config:` and `default:` keys rather than
+`uses:` references, Dependabot cannot see them and they drift. A stale
+pin gives no warning: it omits newly allow-listed endpoints, so
+block-mode jobs fail later with confusing `ECONNREFUSED` errors against hosts added
+to the allow-list weeks earlier.
+
+Every Monday, `allow-list-bump.yaml` enumerates the in-scope
+repositories, runs [`gha-workflow-linter`][linter] against each with
+`--update-allow-list`, and opens a pull request wherever a pin moved. A
+Slack digest links every pull request raised.
+
+[linter]: https://github.com/lfreleng-actions/gha-workflow-linter
+
+#### Scope
+
+The sweep covers the **`*-workflows` family**, and nothing else. Those
+repositories host the reusable build workflows consumers run, where a
+missing endpoint breaks real builds in downstream projects. Standard
+GitHub plumbing elsewhere in the organisation touches a small, stable
+endpoint set, so a pin some versions behind has little practical effect,
+and weekly pull requests against it would create review noise.
+
+To sweep something else, run the workflow manually and supply an
+`extra-include` glob. The `ALLOW_LIST_BUMP_EXCLUDE` variable removes
+repositories from every run.
+
+#### Behaviour
+
+- Runs with `--no-auto-fix`, so each pull request carries a diff
+  confined to allow-list pins. Action version bumps belong to Dependabot, and
+  mixing them makes the change harder to review and harder to revert.
+- The pinned reference and its version comment change, and nothing
+  else: quoting style, spacing and comment position all survive.
+- The sweep leaves alone any pin carrying an `allow-list-pin-ok`
+  directive.
+- The branch name derives from the target version, so a re-run updates
+  the open pull request rather than opening a duplicate.
+- A `dry-run` dispatch input reports what would change without opening
+  anything.
+
+#### Required configuration
+
+<!-- markdownlint-disable MD013 -->
+
+| Name                      | Kind     | Purpose                                                                                                                               |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `ALLOWLIST_BUMP_PAT`      | Secret   | Classic PAT with `repo` and `read:org`. The ephemeral `GITHUB_TOKEN` cannot push branches or open pull requests in another repository |
+| `ALLOW_LIST_BUMP_NAME`    | Variable | Commit author and committer name                                                                                                      |
+| `ALLOW_LIST_BUMP_EMAIL`   | Variable | Commit author and committer email, used for the DCO sign-off                                                                          |
+| `ALLOW_LIST_BUMP_EXCLUDE` | Variable | Optional extra exclude globs                                                                                                          |
+| `SLACK_BOT_TOKEN`         | Secret   | Shared with the other scheduled workflows                                                                                             |
+| `SLACK_CHANNEL_ID`        | Variable | Shared with the other scheduled workflows                                                                                             |
+
+<!-- markdownlint-enable MD013 -->
+
+All jobs run in the `production` environment, so environment protection
+rules can guard the PAT and the Slack token.
 
 ### Repository Audit Workflow
 

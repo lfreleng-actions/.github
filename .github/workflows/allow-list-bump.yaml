@@ -1,0 +1,536 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Weekly harden-runner allow-list pin sweep.
+#
+# The workflow-repo family pins the harden-runner egress allow-list with a
+# custom uses-style coordinate consumed by harden-runner-block-action:
+#
+#   config: '@<sha>'                                          # v0.1.1
+#   default: 'lfreleng-actions//.github/harden-runner/...@<sha>'  # v0.12.2
+#
+# These are values of 'config:' and 'default:' keys rather than 'uses:'
+# references, so Dependabot cannot see them and they drift. A stale pin
+# means a block-mode job lacks newly allow-listed endpoints, producing
+# confusing ECONNREFUSED failures long after the allow-list was fixed.
+#
+# Every Monday this enumerates the in-scope repositories, runs
+# gha-workflow-linter against each with --update-allow-list, and opens a
+# pull request wherever a pin moved. A Slack digest links every PR raised;
+# a separate job reports a failed run.
+#
+# Scope is the *-workflows family: those host the reusable build workflows
+# consumers actually run, where a missing endpoint breaks real builds.
+# Standard GitHub plumbing elsewhere in the organisation touches a small,
+# stable endpoint set, so a pin several versions behind has little
+# practical effect and weekly PRs against it would be review noise. Run
+# this manually with an extra-include to sweep something else.
+#
+# Requires a PAT able to push branches and open pull requests across the
+# organisation: the ephemeral GITHUB_TOKEN cannot do either in another
+# repository. A classic PAT needs the scopes: repo, read:org.
+
+name: 'Allow-List Bump 🔗'
+
+# yamllint disable-line rule:truthy
+on:
+  schedule:
+    # Mondays at 05:00 UTC, ahead of the 06:00 weekday scanners so a
+    # freshly raised PR is visible at the start of the week.
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      org:
+        # yamllint disable-line rule:line-length
+        description: 'Organisation to sweep (name only); blank uses the org running this workflow'
+        required: false
+        default: ''
+      repo:
+        # yamllint disable-line rule:line-length
+        description: 'Sweep only this repository (name only) if in scope; blank sweeps all'
+        required: false
+        default: ''
+      extra-include:
+        # yamllint disable-line rule:line-length
+        description: 'Additional include globs beyond *-workflows (comma separated)'
+        required: false
+        default: ''
+      dry-run:
+        description: 'Report what would change without opening pull requests'
+        required: false
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: 'allow-list-bump'
+  cancel-in-progress: false
+
+env:
+  # Branch name is derived from the target version, so a re-run updates
+  # the existing pull request rather than opening a duplicate.
+  BRANCH_PREFIX: 'chore/allow-list'
+
+jobs:
+  discover:
+    name: 'Discover repositories'
+    permissions:
+      contents: read
+    # Shared with the SARIF publishers so scope policy lives in one place
+    # (.github/scan-scope.json plus the include/exclude inputs).
+    uses: './.github/workflows/repo-discovery.yaml'
+    with:
+      org: '${{ inputs.org || github.repository_owner }}'
+      only-repo: '${{ inputs.repo }}'
+      # The critical tier. A dispatch run may widen it.
+      extra-include: '*-workflows,${{ inputs.extra-include }}'
+      extra-exclude: '${{ vars.ALLOW_LIST_BUMP_EXCLUDE }}'
+    secrets:
+      token: '${{ secrets.ALLOWLIST_BUMP_PAT }}'
+
+  bump:
+    name: 'Bump (${{ matrix.repo }})'
+    needs: 'discover'
+    if: needs.discover.outputs.count != '0'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 15
+    # Run in a dedicated environment so execution and the PAT can be
+    # gated by environment protection rules (satisfies zizmor's
+    # secrets-outside-env).
+    environment: 'production'
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.matrix) }}
+    steps:
+      # Load the egress allow-list out-of-band from lfreleng-actions/.github
+      # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@6db537b3e6d060c3287c5a3ce2c28b55b0af330d  # v0.2.1
+        with:
+          config: '@d43a857514f81ce2af4230aca16e179ef96148d8'  # v0.13.0
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Checkout repository under sweep'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: '${{ needs.discover.outputs.org }}/${{ matrix.repo }}'
+          ref: '${{ matrix.default_branch }}'
+          # The push below supplies its own credential, so none is left
+          # in the checkout for a later step or artefact to pick up.
+          persist-credentials: false
+
+      - name: 'Install uv'
+        # yamllint disable-line rule:line-length
+        uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d  # v10.0.0
+        with:
+          enable-cache: true
+
+      - name: 'Update allow-list pins'
+        id: 'bump'
+        shell: bash
+        env:
+          GITHUB_TOKEN: '${{ secrets.ALLOWLIST_BUMP_PAT }}'
+          ORG: '${{ needs.discover.outputs.org }}'
+          REPO: '${{ matrix.repo }}'
+        run: |
+          # Update allow-list pins
+          set -euo pipefail
+
+          # --no-auto-fix keeps the diff to allow-list pins alone: action
+          # version bumps are Dependabot's job, and mixing them makes the
+          # pull request harder to review and harder to revert.
+          #
+          # The linter exits 1 when it modifies files, which is the signal
+          # we want rather than an error, so the status is captured.
+          report="$(mktemp)"
+          status=0
+          uvx --from gha-workflow-linter gha-workflow-linter lint . \
+            --update-allow-list \
+            --no-auto-fix \
+            --allow-list-org "${ORG}" \
+            --format json > "${report}" || status=$?
+
+          # Any status other than 0 (clean) or 1 (files changed) means the
+          # run itself failed; surface it rather than reporting "no work".
+          if [ "${status}" -gt 1 ]; then
+            echo "::error::linter failed for ${REPO} (exit ${status})" >&2
+            cat "${report}" >&2 || true
+            exit "${status}"
+          fi
+
+          fixed="$(jq -r '.allow_list.summary.fixed // 0' "${report}")"
+          version="$(jq -r '
+            [.allow_list.hosts[] | .latest_version] | first // ""
+          ' "${report}")"
+          host="$(jq -r '.allow_list.hosts | keys | first // ""' "${report}")"
+
+          echo "Rewrote ${fixed} allow-list pin(s) in ${REPO}"
+          {
+            echo "fixed=${fixed}"
+            echo "version=${version}"
+            echo "host=${host}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 'Open pull request'
+        id: 'pr'
+        if: steps.bump.outputs.fixed != '0' && !inputs.dry-run
+        shell: bash
+        env:
+          GH_TOKEN: '${{ secrets.ALLOWLIST_BUMP_PAT }}'
+          ORG: '${{ needs.discover.outputs.org }}'
+          REPO: '${{ matrix.repo }}'
+          BASE: '${{ matrix.default_branch }}'
+          VERSION: '${{ steps.bump.outputs.version }}'
+          HOST: '${{ steps.bump.outputs.host }}'
+          FIXED: '${{ steps.bump.outputs.fixed }}'
+          PREFIX: '${{ env.BRANCH_PREFIX }}'
+          AUTHOR_NAME: '${{ vars.ALLOW_LIST_BUMP_NAME }}'
+          AUTHOR_EMAIL: '${{ vars.ALLOW_LIST_BUMP_EMAIL }}'
+          SERVER: '${{ github.server_url }}'
+          WORKFLOW_REPO: '${{ github.repository }}'
+          RUN_ID: '${{ github.run_id }}'
+        run: |
+          # Open pull request
+          set -euo pipefail
+
+          # Branch is keyed on the target version, so a re-run updates the
+          # open pull request rather than opening a second one.
+          branch="${PREFIX}-${VERSION}"
+          run_url="${SERVER}/${WORKFLOW_REPO}/actions/runs/${RUN_ID}"
+          workflow_url="${SERVER}/${WORKFLOW_REPO}/blob/main"
+          workflow_url="${workflow_url}/.github/workflows/allow-list-bump.yaml"
+
+          git config user.name "${AUTHOR_NAME}"
+          git config user.email "${AUTHOR_EMAIL}"
+          git checkout -b "${branch}"
+          git add -A
+
+          # A DCO sign-off is mandatory across the organisation, and the
+          # capitalised Conventional Commit type is what the semantic
+          # pull request check expects.
+          git commit -q -F - <<COMMIT
+          Chore: bump harden-runner allow-list to ${VERSION}
+
+          The harden-runner allow-list pins in this repository lagged
+          behind ${HOST}. Dependabot cannot see these references, because
+          they are values of 'config:' and 'default:' keys rather than
+          'uses:' references, so they drift until something bumps them.
+
+          A stale pin means a block-mode job lacks newly allow-listed
+          endpoints, producing confusing ECONNREFUSED failures long after
+          the allow-list itself was corrected.
+
+          Raised automatically by the weekly allow-list sweep.
+
+          Signed-off-by: ${AUTHOR_NAME} <${AUTHOR_EMAIL}>
+          COMMIT
+
+          # Supply the credential to this push alone rather than storing
+          # it in the checkout. GitHub masks the secret in logs; the URL
+          # is never echoed regardless.
+          push_url="https://x-access-token:${GH_TOKEN}@github.com"
+          push_url="${push_url}/${ORG}/${REPO}.git"
+          git push --force "${push_url}" "${branch}" > /dev/null 2>&1
+
+          # An existing pull request for this branch is already updated by
+          # the push above, so only create one when none is open.
+          existing="$(gh pr list --repo "${ORG}/${REPO}" \
+            --head "${branch}" --state open --json url --jq '.[0].url // ""')"
+          if [ -n "${existing}" ]; then
+            echo "Updated existing pull request: ${existing}"
+            echo "url=${existing}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          body="$(cat <<BODY
+          ## Summary
+
+          Bumps the \`step-security/harden-runner\` egress allow-list pins
+          to **${VERSION}**, the current release of \`${HOST}\`.
+
+          \`${FIXED}\` pin(s) were rewritten.
+
+          ## Why this is not a Dependabot update
+
+          These pins are values of \`config:\` and \`default:\` keys, not
+          \`uses:\` references, so Dependabot cannot see them. They drift
+          until something bumps them, which is what this sweep does.
+
+          A stale pin does not fail loudly: it silently omits newly
+          allow-listed endpoints, so block-mode jobs fail later with
+          confusing \`ECONNREFUSED\` errors against hosts that were added
+          to the allow-list weeks earlier.
+
+          ## What changed
+
+          Only the pinned reference and its version comment. Quoting
+          style, spacing and any suppression directive are preserved, so
+          the diff should be limited to the pins themselves.
+
+          Pins carrying an \`allow-list-pin-ok\` directive were left alone.
+
+          ---
+
+          Raised automatically by [allow-list-bump.yaml](${workflow_url})
+          ([run](${run_url})).
+          BODY
+          )"
+
+          url="$(gh pr create --repo "${ORG}/${REPO}" \
+            --base "${BASE}" --head "${branch}" \
+            --title "Chore: bump harden-runner allow-list to ${VERSION}" \
+            --body "${body}")"
+          echo "Opened pull request: ${url}"
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+
+      - name: 'Record outcome'
+        if: always() && steps.bump.outputs.fixed != '0'
+        shell: bash
+        env:
+          REPO: '${{ matrix.repo }}'
+          ORG: '${{ needs.discover.outputs.org }}'
+          VERSION: '${{ steps.bump.outputs.version }}'
+          FIXED: '${{ steps.bump.outputs.fixed }}'
+          PR_URL: '${{ steps.pr.outputs.url }}'
+        run: |
+          # Record outcome
+          # Matrix jobs cannot share outputs, so each writes a fragment
+          # that the digest job collects from the uploaded artefacts.
+          set -euo pipefail
+          mkdir -p outcome
+          jq -n \
+            --arg repo "${ORG}/${REPO}" \
+            --arg version "${VERSION}" \
+            --arg url "${PR_URL}" \
+            --argjson fixed "${FIXED}" \
+            '{repo: $repo, version: $version, url: $url, fixed: $fixed}' \
+            > "outcome/${REPO}.json"
+
+      - name: 'Upload outcome'
+        if: always() && steps.bump.outputs.fixed != '0'
+        # yamllint disable-line rule:line-length
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: 'allow-list-outcome-${{ matrix.repo }}'
+          path: 'outcome/'
+          retention-days: 7
+
+  notify:
+    name: 'Notify Slack'
+    needs: ['discover', 'bump']
+    # Report whatever completed, even when some repositories failed: a
+    # partial digest with the failures called out beats none at all.
+    if: >-
+      ${{ always()
+      && needs.discover.result == 'success'
+      && needs.discover.outputs.count != '0'
+      && !inputs.dry-run }}
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    # The Slack bot token is environment-scoped; running here satisfies
+    # zizmor's secrets-outside-env audit.
+    environment: 'production'
+    permissions: {}
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@6db537b3e6d060c3287c5a3ce2c28b55b0af330d  # v0.2.1
+        with:
+          config: '@d43a857514f81ce2af4230aca16e179ef96148d8'  # v0.13.0
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Collect outcomes'
+        id: 'collect'
+        # yamllint disable-line rule:line-length
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: 'allow-list-outcome-*'
+          path: 'outcomes'
+          merge-multiple: true
+
+      - name: 'Build digest'
+        id: 'digest'
+        shell: bash
+        env:
+          SERVER: '${{ github.server_url }}'
+          REPO_SLUG: '${{ github.repository }}'
+          RUN_ID: '${{ github.run_id }}'
+          TOTAL: '${{ needs.discover.outputs.count }}'
+          BUMP_RESULT: '${{ needs.bump.result }}'
+        run: |
+          # Build digest
+          set -euo pipefail
+          RUN_URL="${SERVER}/${REPO_SLUG}/actions/runs/${RUN_ID}"
+
+          # A quiet week is quiet: no pull requests and no failures means
+          # nothing worth interrupting anyone for.
+          raised=0
+          lines=''
+          if compgen -G 'outcomes/*.json' > /dev/null; then
+            while IFS= read -r entry; do
+              repo="$(printf '%s' "${entry}" | jq -r '.repo')"
+              version="$(printf '%s' "${entry}" | jq -r '.version')"
+              url="$(printf '%s' "${entry}" | jq -r '.url')"
+              fixed="$(printf '%s' "${entry}" | jq -r '.fixed')"
+              if [ -n "${url}" ] && [ "${url}" != 'null' ]; then
+                lines="${lines}• <${url}|${repo}> → ${version}"
+                lines="${lines} (${fixed} pin(s))\\n"
+                raised=$((raised + 1))
+              fi
+            done < <(jq -c '.' outcomes/*.json)
+          fi
+
+          failed='false'
+          if [ "${BUMP_RESULT}" != 'success' ]; then
+            failed='true'
+          fi
+
+          if [ "${raised}" -eq 0 ] && [ "${failed}" = 'false' ]; then
+            echo 'No pull requests raised and no failures; staying quiet'
+            echo 'notify=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          noun='repositories'
+          [ "${TOTAL}" = '1' ] && noun='repository'
+          summary="Raised *${raised}* pull request(s) across"
+          summary="${summary} ${TOTAL} ${noun}."
+          if [ "${failed}" = 'true' ]; then
+            summary="${summary} :warning: Some repositories failed;"
+            summary="${summary} see the run for detail."
+          fi
+          [ -z "${lines}" ] && lines='_No pull requests were raised._'
+
+          {
+            echo 'notify=true'
+            echo "summary=${summary}"
+            echo "lines=${lines}"
+            echo "run_url=${RUN_URL}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 'Check Slack configuration'
+        id: 'slack-config'
+        if: steps.digest.outputs.notify == 'true'
+        shell: bash
+        env:
+          SLACK_BOT_TOKEN: '${{ secrets.SLACK_BOT_TOKEN }}'
+          SLACK_CHANNEL_ID: '${{ vars.SLACK_CHANNEL_ID }}'
+        run: |
+          # Check Slack configuration
+          # Missing credentials disable the integration gracefully rather
+          # than failing a sweep that already did its work.
+          if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            msg="⚠️ Slack integration not available; requires token/credentials"
+            echo "::warning::${msg}"
+            echo "${msg}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 'Send Slack digest'
+        # yamllint disable-line rule:line-length
+        if: steps.digest.outputs.notify == 'true' && steps.slack-config.outputs.configured == 'true'
+        # yamllint disable-line rule:line-length
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d  # v4.0.0
+        with:
+          method: 'chat.postMessage'
+          token: '${{ secrets.SLACK_BOT_TOKEN }}'
+          # yamllint disable rule:line-length
+          payload: |
+            channel: "${{ vars.SLACK_CHANNEL_ID }}"
+            text: "🔗 Allow-list sweep: ${{ steps.digest.outputs.summary }}"
+            blocks:
+              - type: "header"
+                text:
+                  type: "plain_text"
+                  text: "🔗 Harden-runner allow-list sweep"
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: "${{ steps.digest.outputs.summary }}"
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: "${{ steps.digest.outputs.lines }}"
+              - type: "context"
+                elements:
+                  - type: "mrkdwn"
+                    text: "<${{ steps.digest.outputs.run_url }}|View workflow run>"
+          # yamllint enable rule:line-length
+
+  notify-failure:
+    name: 'Notify Slack on failure'
+    needs: ['discover', 'bump', 'notify']
+    # Alert when the scheduled sweep breaks, so a silent weekly failure
+    # does not go unnoticed. Restricted to the scheduled trigger, since
+    # manual runs are watched interactively.
+    if: >-
+      ${{ always()
+      && github.event_name == 'schedule'
+      && (contains(needs.*.result, 'failure')
+      || contains(needs.*.result, 'cancelled')) }}
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    environment: 'production'
+    permissions: {}
+    steps:
+      # The pinned allow-list permits slack.com, so the notification below
+      # reaches Slack under the block egress policy.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@6db537b3e6d060c3287c5a3ce2c28b55b0af330d  # v0.2.1
+        with:
+          config: '@d43a857514f81ce2af4230aca16e179ef96148d8'  # v0.13.0
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Notify Slack of sweep failure'
+        # yamllint disable-line rule:line-length
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d  # v4.0.0
+        with:
+          method: 'chat.postMessage'
+          token: '${{ secrets.SLACK_BOT_TOKEN }}'
+          # yamllint disable rule:line-length
+          payload: |
+            channel: "${{ vars.SLACK_CHANNEL_ID }}"
+            text: "🔗 *Allow-list sweep failed* in ${{ github.repository }}"
+            blocks:
+              - type: "header"
+                text:
+                  type: "plain_text"
+                  text: "🔗 Allow-list sweep failed"
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: "The weekly harden-runner allow-list sweep failed. Pins across the *-workflows family may be stale until it re-runs successfully."
+              - type: "context"
+                elements:
+                  - type: "mrkdwn"
+                    text: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+          # yamllint enable rule:line-length
