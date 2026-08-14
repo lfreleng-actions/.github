@@ -72,6 +72,11 @@ env:
   # Branch name is derived from the target version, so a re-run updates
   # the existing pull request rather than opening a duplicate.
   BRANCH_PREFIX: 'chore/allow-list'
+  # Pinned deliberately. Every action here is pinned to a commit, and an
+  # unpinned install would let one bad release reach every repository in
+  # the sweep at once, raising pull requests from it. Bump when the
+  # linter releases something this sweep needs.
+  LINTER_VERSION: '1.4.0'
 
 jobs:
   discover:
@@ -129,9 +134,11 @@ jobs:
         with:
           repository: '${{ needs.discover.outputs.org }}/${{ matrix.repo }}'
           ref: '${{ matrix.default_branch }}'
-          # The push below supplies its own credential, so none is left
-          # in the checkout for a later step or artefact to pick up.
+          # The PAT reads the target repository; persist-credentials
+          # keeps it out of .git/config so no later step or artefact can
+          # pick it up. The push supplies its own credential separately.
           persist-credentials: false
+          token: '${{ secrets.ALLOWLIST_BUMP_PAT }}'
 
       - name: 'Install uv'
         # yamllint disable-line rule:line-length
@@ -146,6 +153,7 @@ jobs:
           GITHUB_TOKEN: '${{ secrets.ALLOWLIST_BUMP_PAT }}'
           ORG: '${{ needs.discover.outputs.org }}'
           REPO: '${{ matrix.repo }}'
+          LINTER_VERSION: '${{ env.LINTER_VERSION }}'
         run: |
           # Update allow-list pins
           set -euo pipefail
@@ -158,7 +166,8 @@ jobs:
           # we want rather than an error, so the status is captured.
           report="$(mktemp)"
           status=0
-          uvx --from gha-workflow-linter gha-workflow-linter lint . \
+          uvx --from "gha-workflow-linter==${LINTER_VERSION}" \
+            gha-workflow-linter lint . \
             --update-allow-list \
             --no-auto-fix \
             --allow-list-org "${ORG}" \
@@ -173,10 +182,27 @@ jobs:
           fi
 
           fixed="$(jq -r '.allow_list.summary.fixed // 0' "${report}")"
-          version="$(jq -r '
-            [.allow_list.hosts[] | .latest_version] | first // ""
+
+          # Read the host and its version as one pair. Taking them from
+          # separate traversals lets a multi-host report pair one host's
+          # name with another's version, so the branch and title would
+          # disagree with the commit message.
+          pair="$(jq -r '
+            .allow_list.hosts | to_entries | .[0] // empty
+            | "\(.key)\t\(.value.latest_version)"
           ' "${report}")"
-          host="$(jq -r '.allow_list.hosts | keys | first // ""' "${report}")"
+          host="${pair%%$'\t'*}"
+          version="${pair#*$'\t'}"
+          [ "${pair}" = '' ] && { host=''; version=''; }
+
+          # More than one host is unusual: every pin in a repository
+          # normally names the same .github. Say so rather than letting
+          # the pull request silently describe one of them.
+          hosts="$(jq -r '.allow_list.hosts | length' "${report}")"
+          if [ "${hosts}" -gt 1 ]; then
+            echo "::warning::${REPO} resolved ${hosts} allow-list hosts;" \
+              "the pull request describes ${host} (${version})"
+          fi
 
           echo "Rewrote ${fixed} allow-list pin(s) in ${REPO}"
           {

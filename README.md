@@ -561,6 +561,10 @@ repositories from every run.
   the open pull request rather than opening a duplicate.
 - A `dry-run` dispatch input reports what would change without opening
   anything.
+- The workflow pins the linter version in `LINTER_VERSION`, matching the
+  commit-pinned actions around it. An unpinned install would let one bad
+  release reach every repository in the sweep at once. Bump it when the
+  linter ships something the sweep needs.
 
 #### Required configuration
 
