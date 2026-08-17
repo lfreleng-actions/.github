@@ -1,0 +1,22 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Path-specific actionlint configuration.
+paths:
+  .github/workflows/semantic-pull-request.yaml:
+    ignore:
+      # actionlint does not yet know the 'queue' concurrency key.
+      #
+      # GitHub documents it under 'concurrency' and
+      # 'jobs.<job_id>.concurrency': 'single' (the default) holds one
+      # pending run and cancels it when another arrives, while 'max'
+      # holds up to 100 and runs them in order. This workflow needs
+      # 'max' so a burst of pull request events cannot leave a
+      # cancelled check run behind. See the comment on the concurrency
+      # block in that file.
+      #
+      # actionlint validates the key against a hardcoded list
+      # (cancel-in-progress, group), so it reports the key as
+      # unexpected. Remove this ignore once actionlint learns it.
+      - 'unexpected key "queue" for "concurrency" section'
