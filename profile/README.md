@@ -42,6 +42,7 @@ with signed tags and provenance attestations.
 | [go-audit-action]             | Audit a Go project with govulncheck, gosec, and staticcheck   |
 | [sbom-action]                 | Generate CycloneDX SBOM reports for any language ecosystem    |
 | [make-action]                 | Execute the steps described in a Makefile                     |
+| [rtd-build-action]            | Build and publish Read the Docs documentation                 |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -158,6 +159,7 @@ with signed tags and provenance attestations.
 | [gha-workflow-linter]              | Lint and verify GitHub workflow/action calls                        |
 | [change-isolation-action]          | Verify a change isolates edits to gitignore-style path patterns     |
 | [aislop-scan-action]               | Scan a repository with the aislop AI-slop/code-quality scanner      |
+| [rtd-config-audit-action]          | Audit and verify Read the Docs configuration files                  |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -205,15 +207,17 @@ configurations that projects can call directly:
 
 <!-- markdownlint-disable MD013 -->
 
-| Repository           | Description                                                             |
-| -------------------- | ----------------------------------------------------------------------- |
-| [python-workflows]   | Reusable build, test, and release workflows for Python projects         |
-| [go-workflows]       | Reusable build, test, and release workflows for Go projects             |
-| [node-workflows]     | Reusable build, test, audit, and release workflows for Node.js projects |
-| [java-workflows]     | Reusable build, test, and release workflows for Java projects           |
-| [docker-workflows]   | Reusable build and publish workflows for Docker container images        |
-| [generic-workflows]  | Language-agnostic reusable workflows, including tag-driven release      |
-| [security-workflows] | Security and code auditing focussed reusable workflows                  |
+| Repository             | Description                                                             |
+| ---------------------- | ----------------------------------------------------------------------- |
+| [python-workflows]     | Reusable build, test, and release workflows for Python projects         |
+| [go-workflows]         | Reusable build, test, and release workflows for Go projects             |
+| [node-workflows]       | Reusable build, test, audit, and release workflows for Node.js projects |
+| [java-workflows]       | Reusable build, test, and release workflows for Java projects           |
+| [docker-workflows]     | Reusable build and publish workflows for Docker container images        |
+| [generic-workflows]    | Language-agnostic reusable workflows, including tag-driven release      |
+| [security-workflows]   | Security and code auditing focussed reusable workflows                  |
+| [docs-workflows]       | Reusable documentation verify, build, and publish workflows             |
+| [github-issues-triage] | Reusable AI triage workflow that labels open GitHub issues              |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -393,6 +397,7 @@ to all repositories unless otherwise stated.
 [go-audit-action]: https://github.com/lfreleng-actions/go-audit-action
 [sbom-action]: https://github.com/lfreleng-actions/sbom-action
 [make-action]: https://github.com/lfreleng-actions/make-action
+[rtd-build-action]: https://github.com/lfreleng-actions/rtd-build-action
 
 <!-- Publishing & Release Actions -->
 [pypi-publish-action]: https://github.com/lfreleng-actions/pypi-publish-action
@@ -460,6 +465,7 @@ to all repositories unless otherwise stated.
 [gha-workflow-linter]: https://github.com/lfreleng-actions/gha-workflow-linter
 [change-isolation-action]: https://github.com/lfreleng-actions/change-isolation-action
 [aislop-scan-action]: https://github.com/lfreleng-actions/aislop-scan-action
+[rtd-config-audit-action]: https://github.com/lfreleng-actions/rtd-config-audit-action
 
 <!-- Utility Actions -->
 [git-configure-action]: https://github.com/lfreleng-actions/git-configure-action
@@ -492,6 +498,8 @@ to all repositories unless otherwise stated.
 [docker-workflows]: https://github.com/lfreleng-actions/docker-workflows
 [generic-workflows]: https://github.com/lfreleng-actions/generic-workflows
 [security-workflows]: https://github.com/lfreleng-actions/security-workflows
+[docs-workflows]: https://github.com/lfreleng-actions/docs-workflows
+[github-issues-triage]: https://github.com/lfreleng-actions/github-issues-triage
 
 <!-- Test Fixtures & Sample Projects -->
 [test-python-project]: https://github.com/lfreleng-actions/test-python-project
