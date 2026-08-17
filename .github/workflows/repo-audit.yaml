@@ -14,8 +14,12 @@ on:
 
 permissions: {}
 
+# Scope the group to this workflow's purpose rather than to
+# '${{ github.workflow }}', which resolves to the workflow NAME.
+# Local to this repository, so no 'org-' prefix; see
+# release-drafter.yaml.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: 'repo-audit-${{ github.ref }}'
   cancel-in-progress: false
 
 jobs:

@@ -41,8 +41,13 @@ on:
 
 permissions: {}
 
+# Scope the group to this check, not to '${{ github.workflow }}', which
+# resolves to the workflow NAME and so collides with any workflow in
+# the target repository sharing it. A repository that once carried its
+# own copy of this file is the obvious way to acquire such a name, and
+# three did before they were cleaned up.
 concurrency:
-  group: '${{ github.workflow }}-${{ github.ref }}'
+  group: 'org-zizmor-${{ github.ref }}'
   cancel-in-progress: true
 
 jobs:
