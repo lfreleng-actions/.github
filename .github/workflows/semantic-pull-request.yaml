@@ -13,8 +13,14 @@ on:
 
 permissions: {}
 
+# Scope the group to this check, not to '${{ github.workflow }}'.
+# github.workflow resolves to the workflow NAME, so any workflow in the
+# target repository sharing this one's name would share the group and
+# one of the two would be cancelled before running. The 'org-' prefix
+# keeps this organisation-level copy clear of a repository's own
+# caller, which names its group after the check alone.
 concurrency:
-  group: "${{ github.workflow }}-${{ github.ref }}"
+  group: 'org-semantic-pull-request-${{ github.ref }}'
   cancel-in-progress: true
 
 jobs:

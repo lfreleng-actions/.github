@@ -12,8 +12,14 @@ on:
 
 permissions: {}
 
+# Scope the group to this workflow's purpose rather than to
+# '${{ github.workflow }}', which resolves to the workflow NAME and so
+# collides with any other workflow here sharing it. This file is local
+# to this repository, not injected by a ruleset, so it needs no 'org-'
+# prefix; it follows the bare-slug form already used by
+# zizmor-sarif-publish.yaml and aislop-sarif-publish.yaml.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: 'release-drafter-${{ github.ref }}'
   cancel-in-progress: true
 
 jobs:

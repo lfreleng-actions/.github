@@ -27,9 +27,13 @@ permissions: {}
 # Serialise repeated runs for the same tag; never cancel an in-flight
 # release promotion. Distinct tags use distinct groups and proceed
 # independently. This group cannot collide with the reusable's own,
-# which carries a literal workflow-specific prefix.
+# which carries a literal workflow-specific prefix. It is a literal
+# here too rather than '${{ github.workflow }}', which resolves to the
+# workflow NAME and would tie the serialisation to a name any other
+# workflow could take. Local to this repository, so no 'org-' prefix;
+# see release-drafter.yaml.
 concurrency:
-  group: '${{ github.workflow }}-${{ github.ref }}'
+  group: 'release-${{ github.ref }}'
   cancel-in-progress: false
 
 jobs:

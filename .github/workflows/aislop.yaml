@@ -49,8 +49,11 @@ on:
 
 permissions: {}
 
+# Scope the group to this check, not to '${{ github.workflow }}', which
+# resolves to the workflow NAME and so collides with any workflow in
+# the target repository sharing it. See semantic-pull-request.yaml.
 concurrency:
-  group: '${{ github.workflow }}-${{ github.ref }}'
+  group: 'org-aislop-${{ github.ref }}'
   cancel-in-progress: true
 
 jobs:
