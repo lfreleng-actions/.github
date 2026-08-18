@@ -208,11 +208,38 @@ get.helm.sh:443
 # GitHub Container Registry: docker build-push/login and helm pulls.
 ghcr.io:443
 
+# cgit (AGL, FD.io): one Linux Foundation cgit instance answers for
+# several projects under a single certificate, all four names below
+# resolving to one address. tox reads pip constraints from it while
+# building a docs environment, before pip runs, via
+# -chttps://git.onap.org/doc/plain/etc/upper-constraints.onap.txt and
+# its per-project equivalents. ONAP reaches it today through
+# docs-workflows and tox-run-action; these sibling names are listed
+# alongside because harden-runner matches on hostname rather than
+# address, so one shared host answering to several names needs an
+# entry per name, and a project adopting these workflows would
+# otherwise fail exactly as ONAP did.
+git.automotivelinux.org:443
+git.fd.io:443
+
+# LF RelEng: redirects to github.com/linuxfoundation. A block refuses
+# the first hop before any 3xx returns, so the redirecting name needs
+# an entry even though its target already appears below.
+git.linuxfoundation.org:443
+
+# cgit (ONAP): the shared host described above, under the name ONAP's
+# documentation builds request.
+git.onap.org:443
+
 # Gerrit (OpenDaylight): git clone via gerrit-clone-action and
 # python-test-action (HTTPS); git-over-SSH clone, review voting and
 # ssh-keyscan (SSH).
 git.opendaylight.org:29418
 git.opendaylight.org:443
+
+# cgit (Anuket/OPNFV): the shared host described at
+# git.automotivelinux.org above.
+git.opnfv.org:443
 
 # GitHub SSH: git-over-SSH checkout in python-test-action.
 github.com:22
