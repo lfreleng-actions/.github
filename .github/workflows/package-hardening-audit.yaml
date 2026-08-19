@@ -4,16 +4,16 @@
 
 # Package manager hardening audit (organisation-wide).
 #
-# Thin caller for the reusable workflow in releng-reusable-workflows.
+# Thin caller for the reusable lane in lfreleng-actions/security-workflows.
 # This file is the canonical copy enforced organisation-wide via the
 # mandatory-workflows ruleset, so the audit runs on every targeted
 # repository without being copied into each one (it also self-audits
 # this repository on PRs).
 #
-# Non-blocking: warn_only keeps the audit advisory (it always exits 0),
-# so as a required check it never prevents merging while the validation
-# rules are refined retrospectively across the fleet. Drop warn_only in
-# the reusable call to turn it into an enforcing gate.
+# Non-blocking: audit_permit_fail keeps the audit advisory (it always
+# exits 0), so as a required workflow it never prevents merging while
+# the validation rules are refined retrospectively across the fleet.
+# Set audit_permit_fail to false to turn it into an enforcing gate.
 name: 'Package Hardening Audit'
 
 # yamllint disable-line rule:truthy
@@ -34,8 +34,20 @@ jobs:
   package-hardening-audit:
     name: 'Audit package manager hardening'
     # yamllint disable-line rule:line-length
-    uses: lfit/releng-reusable-workflows/.github/workflows/reuse-package-hardening-audit.yaml@f7aae218f1fa0257e3dcd19f5c7d3f88f482f266  # v0.10.1
+    uses: lfreleng-actions/security-workflows/.github/workflows/package-hardening-audit.yaml@5882f138dd24fcd6cb4ebc8bb3a68cee45a437a6  # v0.3.0
     permissions:
-      contents: read
+      contents: read  # Lane checks out the repository under audit
     with:
-      warn_only: true
+      # Renamed from warn_only when the lane moved. Same meaning and
+      # same default; passed explicitly to keep the advisory posture
+      # visible here rather than resting on the lane's default.
+      audit_permit_fail: true
+      # Grade the release-age control against Dependabot cooldowns
+      # instead of accepting either source. Every repository in this
+      # organisation carrying a dependabot.yml already declares a
+      # cooldown, and none configures a resolver-level one (uv
+      # exclude-newer, npm age gates), so this alters no grade today.
+      # It stops a resolver-level cooldown from quietly satisfying the
+      # control later: that form blocks Dependabot's automated
+      # security updates.
+      cooldown_strategy: 'dependabot'
