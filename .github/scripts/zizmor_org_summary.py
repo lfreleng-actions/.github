@@ -113,10 +113,15 @@ def _count_repo(org: str, repo: str, branch: str) -> tuple[dict | None, str | No
     return counts, None
 
 
-def main() -> int:
-    org = os.environ["ORG"]
-    matrix = json.loads(os.environ["MATRIX"])
-
+def _collect(
+    org: str, matrix: list[dict]
+) -> tuple[
+    list[tuple[str, dict]],
+    list[str],
+    list[str],
+    list[tuple[str, str]],
+]:
+    """Count alerts per repository and sort offenders worst-first."""
     offenders: list[tuple[str, dict]] = []
     clean: list[str] = []
     no_data: list[str] = []
@@ -142,6 +147,13 @@ def main() -> int:
             item[0],
         )
     )
+    return offenders, clean, no_data, errors
+
+
+def _offender_table(offenders: list[tuple[str, dict]]) -> list[str]:
+    """Render the worst-first findings table (or the all-clear line)."""
+    if not offenders:
+        return ["No open zizmor findings anywhere. :rainbow:"]
 
     totals = dict.fromkeys(SEVERITIES, 0)
     for _, counts in offenders:
@@ -160,6 +172,36 @@ def main() -> int:
         "informational": "Info",
     }
 
+    lines = [
+        "| Repository | " + " | ".join(titles[sev] for sev in columns) + " | Total |",
+        "| :--- |" + " ---: |" * (len(columns) + 1),
+    ]
+    for repo, counts in offenders:
+        cells = " | ".join(str(counts[sev]) for sev in columns)
+        lines.append(f"| {repo} | {cells} | {sum(counts.values())} |")
+    total_cells = " | ".join(str(totals[sev]) for sev in columns)
+    lines.append(f"| **Total** | {total_cells} | **{sum(totals.values())}** |")
+    return lines
+
+
+def _repo_list_details(summary: str, names: list[str]) -> list[str]:
+    """Render a collapsed details block listing repositories."""
+    return [
+        "<details>",
+        f"<summary>{summary} ({len(names)})</summary>",
+        "",
+        ", ".join(f"`{name}`" for name in sorted(names)),
+        "",
+        "</details>",
+    ]
+
+
+def main() -> int:
+    org = os.environ["ORG"]
+    matrix = json.loads(os.environ["MATRIX"])
+
+    offenders, clean, no_data, errors = _collect(org, matrix)
+
     lines: list[str] = []
     lines.append(f"## Zizmor organisation posture: {org}")
     lines.append("")
@@ -171,44 +213,12 @@ def main() -> int:
         + "."
     )
     lines.append("")
-    if offenders:
-        header = (
-            "| Repository | "
-            + " | ".join(titles[sev] for sev in columns)
-            + " | Total |"
-        )
-        rule = "| :--- |" + " ---: |" * (len(columns) + 1)
-        lines.append(header)
-        lines.append(rule)
-        for repo, counts in offenders:
-            cells = " | ".join(str(counts[sev]) for sev in columns)
-            lines.append(
-                f"| {repo} | {cells} | {sum(counts.values())} |"
-            )
-        total_cells = " | ".join(str(totals[sev]) for sev in columns)
-        lines.append(
-            f"| **Total** | {total_cells} | "
-            f"**{sum(totals.values())}** |"
-        )
-    else:
-        lines.append("No open zizmor findings anywhere. :rainbow:")
+    lines.extend(_offender_table(offenders))
     lines.append("")
     if clean:
-        lines.append("<details>")
-        lines.append(f"<summary>Clean repositories ({len(clean)})</summary>")
-        lines.append("")
-        lines.append(", ".join(f"`{name}`" for name in sorted(clean)))
-        lines.append("")
-        lines.append("</details>")
+        lines.extend(_repo_list_details("Clean repositories", clean))
     if no_data:
-        lines.append("<details>")
-        lines.append(
-            f"<summary>No code-scanning data ({len(no_data)})</summary>"
-        )
-        lines.append("")
-        lines.append(", ".join(f"`{name}`" for name in sorted(no_data)))
-        lines.append("")
-        lines.append("</details>")
+        lines.extend(_repo_list_details("No code-scanning data", no_data))
     if errors:
         lines.append("")
         lines.append(f"### Unreadable repositories ({len(errors)})")
