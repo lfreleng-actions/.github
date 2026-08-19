@@ -151,7 +151,7 @@ with signed tags and provenance attestations.
 | ---------------------------------- | ------------------------------------------------------------------- |
 | [repository-metadata-action]       | Gather repository metadata                                          |
 | [repository-content-action]        | Scan a repository for different content types                       |
-| [repository-tags]                  | Fetch tags, count them, identify the latest tag, and determine type |
+| [repository-tags-action]           | Fetch tags, count them, identify the latest tag, and determine type |
 | [build-metadata-action]            | Capture and verify comprehensive build metadata across languages    |
 | [openssf-scorecard-summary-action] | Generate OpenSSF Scorecard summary output with report URL           |
 | [pinned-versions-action]           | Verify action/workflow calls use pinned SHA commit values           |
@@ -457,7 +457,7 @@ to all repositories unless otherwise stated.
 <!-- Repository & Code Quality Actions -->
 [repository-metadata-action]: https://github.com/lfreleng-actions/repository-metadata-action
 [repository-content-action]: https://github.com/lfreleng-actions/repository-content-action
-[repository-tags]: https://github.com/lfreleng-actions/repository-tags
+[repository-tags-action]: https://github.com/lfreleng-actions/repository-tags-action
 [build-metadata-action]: https://github.com/lfreleng-actions/build-metadata-action
 [openssf-scorecard-summary-action]: https://github.com/lfreleng-actions/openssf-scorecard-summary-action
 [pinned-versions-action]: https://github.com/lfreleng-actions/pinned-versions-action
