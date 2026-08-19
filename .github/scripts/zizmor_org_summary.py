@@ -26,22 +26,70 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
+from typing import cast
 
-SEVERITIES = ("critical", "high", "medium", "low", "informational")
+SEVERITIES: tuple[str, ...] = ("critical", "high", "medium", "low", "informational")
 
 # SARIF level -> security scale, the only axis zizmor populates.
-_SARIF_LEVELS = {
+_SARIF_LEVELS: dict[str, str] = {
     "error": "high",
     "warning": "medium",
     "note": "low",
     "none": "informational",
 }
 
+_TITLES: dict[str, str] = {
+    "critical": "Critical",
+    "high": "High",
+    "medium": "Medium",
+    "low": "Low",
+    "informational": "Info",
+}
 
-def _gh_api_objects(path: str) -> tuple[list[dict] | None, str | None]:
+
+class GhNotFoundError(RuntimeError):
+    """Raised when the gh CLI cannot be found on PATH."""
+
+    def __init__(self) -> None:
+        """Build the error with its fixed message."""
+        super().__init__("gh CLI not found on PATH")
+
+
+def _gh_executable() -> str:
+    """Resolve the absolute path of the gh CLI."""
+    gh = shutil.which("gh")
+    if gh is None:
+        raise GhNotFoundError
+    return gh
+
+
+def _parse_alert_pages(payload: str) -> list[dict[str, object]]:
+    """Flatten a ``gh api --paginate --slurp`` payload into alert objects.
+
+    The payload is one outer JSON array wrapping the per-page arrays.
+    Entries that are not objects are dropped rather than trusted.
+    """
+    pages = cast("object", json.loads(payload))
+    alerts: list[dict[str, object]] = []
+    if not isinstance(pages, list):
+        return alerts
+    for page in cast("list[object]", pages):
+        if not isinstance(page, list):
+            continue
+        alerts.extend(
+            cast("dict[str, object]", alert)
+            for alert in cast("list[object]", page)
+            if isinstance(alert, dict)
+        )
+    return alerts
+
+
+def _gh_api_objects(path: str) -> tuple[list[dict[str, object]] | None, str | None]:
     """Fetch a paginated array endpoint as a list of objects.
 
     Uses ``gh api --paginate --slurp``, which wraps the per-page arrays
@@ -58,15 +106,14 @@ def _gh_api_objects(path: str) -> tuple[list[dict] | None, str | None]:
     """
     error = "unknown error"
     for _ in range(3):
-        proc = subprocess.run(  # noqa: S603,S607
-            ["gh", "api", "--paginate", "--slurp", path],
+        proc = subprocess.run(  # noqa: S603
+            [_gh_executable(), "api", "--paginate", "--slurp", path],
             capture_output=True,
             text=True,
             check=False,
         )
         if proc.returncode == 0:
-            pages = json.loads(proc.stdout)
-            return [alert for page in pages for alert in page], None
+            return _parse_alert_pages(proc.stdout), None
         error = proc.stderr.strip() or "unknown error"
         if "HTTP 404" in error:
             if _repo_readable(path):
@@ -79,8 +126,8 @@ def _gh_api_objects(path: str) -> tuple[list[dict] | None, str | None]:
 def _repo_readable(alerts_path: str) -> bool:
     """Probe the base repository endpoint behind an alerts path."""
     repo_path = alerts_path.split("/code-scanning/", 1)[0]
-    proc = subprocess.run(  # noqa: S603,S607
-        ["gh", "api", repo_path, "--jq", ".name"],
+    proc = subprocess.run(  # noqa: S603
+        [_gh_executable(), "api", repo_path, "--jq", ".name"],
         capture_output=True,
         text=True,
         check=False,
@@ -88,17 +135,23 @@ def _repo_readable(alerts_path: str) -> bool:
     return proc.returncode == 0
 
 
-def _bucket(alert: dict) -> str:
+def _bucket(alert: dict[str, object]) -> str:
     """Resolve one alert onto the security severity scale."""
-    rule = alert.get("rule") or {}
-    sec = (rule.get("security_severity_level") or "").strip().lower()
+    rule_obj = alert.get("rule")
+    rule = cast("dict[str, object]", rule_obj) if isinstance(rule_obj, dict) else {}
+    sec_obj = rule.get("security_severity_level")
+    sec = sec_obj.strip().lower() if isinstance(sec_obj, str) else ""
     if sec in SEVERITIES:
         return sec
-    level = (rule.get("severity") or "").strip().lower()
+    level_obj = rule.get("severity")
+    level = level_obj.strip().lower() if isinstance(level_obj, str) else ""
     return _SARIF_LEVELS.get(level, "informational")
 
 
-def _count_repo(org: str, repo: str, branch: str) -> tuple[dict | None, str | None]:
+def _count_repo(
+    org: str, repo: str, branch: str
+) -> tuple[dict[str, int] | None, str | None]:
+    """Count one repository's open zizmor alerts per severity."""
     path = (
         f"/repos/{org}/{repo}/code-scanning/alerts"
         f"?state=open&tool_name=zizmor&per_page=100"
@@ -114,22 +167,26 @@ def _count_repo(org: str, repo: str, branch: str) -> tuple[dict | None, str | No
 
 
 def _collect(
-    org: str, matrix: list[dict]
+    org: str, matrix: list[dict[str, object]]
 ) -> tuple[
-    list[tuple[str, dict]],
+    list[tuple[str, dict[str, int]]],
     list[str],
     list[str],
     list[tuple[str, str]],
 ]:
     """Count alerts per repository and sort offenders worst-first."""
-    offenders: list[tuple[str, dict]] = []
+    offenders: list[tuple[str, dict[str, int]]] = []
     clean: list[str] = []
     no_data: list[str] = []
     errors: list[tuple[str, str]] = []
 
     for entry in matrix:
-        repo = entry["repo"]
-        counts, err = _count_repo(org, repo, entry["default_branch"])
+        repo = entry.get("repo")
+        branch = entry.get("default_branch")
+        if not isinstance(repo, str) or not isinstance(branch, str):
+            errors.append((str(repo), "malformed matrix entry"))
+            continue
+        counts, err = _count_repo(org, repo, branch)
         if counts is None:
             if err == "no-data":
                 no_data.append(repo)
@@ -150,7 +207,7 @@ def _collect(
     return offenders, clean, no_data, errors
 
 
-def _offender_table(offenders: list[tuple[str, dict]]) -> list[str]:
+def _offender_table(offenders: list[tuple[str, dict[str, int]]]) -> list[str]:
     """Render the worst-first findings table (or the all-clear line)."""
     if not offenders:
         return ["No open zizmor findings anywhere. :rainbow:"]
@@ -164,16 +221,10 @@ def _offender_table(offenders: list[tuple[str, dict]]) -> list[str]:
     # (the low severity floor normally keeps them out entirely).
     show_info = totals["informational"] > 0
     columns = SEVERITIES if show_info else SEVERITIES[:-1]
-    titles = {
-        "critical": "Critical",
-        "high": "High",
-        "medium": "Medium",
-        "low": "Low",
-        "informational": "Info",
-    }
 
+    title_cells = " | ".join(_TITLES[sev] for sev in columns)
     lines = [
-        "| Repository | " + " | ".join(titles[sev] for sev in columns) + " | Total |",
+        f"| Repository | {title_cells} | Total |",
         "| :--- |" + " ---: |" * (len(columns) + 1),
     ]
     for repo, counts in offenders:
@@ -196,23 +247,32 @@ def _repo_list_details(summary: str, names: list[str]) -> list[str]:
     ]
 
 
+def _load_matrix(raw: str) -> list[dict[str, object]]:
+    """Parse the MATRIX environment variable into entry objects."""
+    parsed = cast("object", json.loads(raw))
+    if not isinstance(parsed, list):
+        return []
+    return [
+        cast("dict[str, object]", entry)
+        for entry in cast("list[object]", parsed)
+        if isinstance(entry, dict)
+    ]
+
+
 def main() -> int:
+    """Render the posture summary; non-zero when any repo is unreadable."""
     org = os.environ["ORG"]
-    matrix = json.loads(os.environ["MATRIX"])
+    matrix = _load_matrix(os.environ["MATRIX"])
 
     offenders, clean, no_data, errors = _collect(org, matrix)
 
-    lines: list[str] = []
-    lines.append(f"## Zizmor organisation posture: {org}")
-    lines.append("")
-    lines.append(
-        f"{len(matrix)} repositories scanned: "
-        f"{len(offenders)} with findings, {len(clean)} clean, "
-        f"{len(no_data)} without code-scanning data"
-        + (f", {len(errors)} unreadable" if errors else "")
-        + "."
+    unreadable = f", {len(errors)} unreadable" if errors else ""
+    scanned = (
+        f"{len(matrix)} repositories scanned: {len(offenders)} with findings,"
+        f" {len(clean)} clean, {len(no_data)} without code-scanning data{unreadable}."
     )
-    lines.append("")
+
+    lines: list[str] = [f"## Zizmor organisation posture: {org}", "", scanned, ""]
     lines.extend(_offender_table(offenders))
     lines.append("")
     if clean:
@@ -231,8 +291,8 @@ def main() -> int:
     print(output)
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
-        with open(summary_path, "a", encoding="utf-8") as handle:
-            handle.write(output)
+        with Path(summary_path).open("a", encoding="utf-8") as handle:
+            _ = handle.write(output)
 
     return 1 if errors else 0
 
