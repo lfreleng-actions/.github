@@ -55,6 +55,14 @@ on:
 
 permissions: {}
 
+# Turn off GitHub CLI telemetry. Steps below shell out to 'gh', which
+# otherwise POSTs usage events to cafe.github.com -- an endpoint no job
+# here needs, and one the org egress allow-list blocks, so every run
+# reports a spurious blocked connection. GH_TELEMETRY takes precedence
+# over DO_NOT_TRACK, so this one variable covers both.
+env:
+  GH_TELEMETRY: 'false'
+
 jobs:
   discover:
     name: 'Discover repositories'
