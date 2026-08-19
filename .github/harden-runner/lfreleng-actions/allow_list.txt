@@ -12,7 +12,39 @@
 # obvious, add a '# comment' directly above it explaining why it's
 # there.
 #
-# A '*.host' entry is a subdomain wildcard.
+# A '*.host' entry matches exactly ONE label. Verified by probe
+# under 'egress-policy: block', because upstream documents neither
+# case: '*.ubuntu.com' admitted 'archive.ubuntu.com' but blocked
+# both 'azure.archive.ubuntu.com' and the bare apex 'ubuntu.com'.
+# So any host two or more labels below the apex needs its own
+# entry alongside the wildcard, and so does an apex host.
+#
+# Distribution package mirrors are a known gap. Fedora, EPEL,
+# CentOS Stream, Rocky, AlmaLinux, openSUSE and Arch all ship
+# default repository configuration that resolves a metalink or
+# mirrorlist and then downloads from whichever third-party mirror
+# it hands back -- hosts sharing no parent domain, varying by
+# source IP and by the hour. The vendor wildcards below cover the
+# metalink/mirrorlist endpoints and the vendor-owned content
+# hosts, but nothing can cover the mirror network itself. Where a
+# job needs one of those distributions, pin the repository
+# 'baseurl' to the vendor-owned HTTPS URL below and clear
+# 'metalink' / 'mirrorlist', rather than adding mirror hosts here.
+# Each of these serves directly, with no redirect off-domain:
+#
+#   Fedora, EPEL  dl.fedoraproject.org
+#   CentOS        mirror.stream.centos.org, vault.centos.org
+#   Rocky         dl.rockylinux.org
+#   AlmaLinux     repo.almalinux.org
+#   openSUSE      cdn.opensuse.org
+#   Arch          geo.mirror.pkgbuild.com
+#
+# Those vendor hosts are reachable over HTTPS, so no port 80 entry
+# exists for them: the plain-HTTP URLs a mirrorlist hands back
+# belong to third-party domains that no wildcard here can cover.
+#
+# Note that 'download.fedoraproject.org' is a redirector and
+# 'dl.fedoraproject.org' is not; only the latter is safe to pin.
 #
 # The per-entry comments record provenance: the service, and the tool,
 # action or task observed reaching it. Most were reconstructed from
@@ -21,6 +53,40 @@
 # entries (e.g. harden-runner's own control-plane) are not observed in
 # that data and are annotated from first principles. Coverage is
 # best-effort: correct or extend a comment whenever you touch an entry.
+
+# AlmaLinux mirrorlist endpoint and vendor-owned content (repo,
+# vault); both served over HTTPS. See the header note: this
+# wildcard does not cover the third-party mirrors themselves.
+*.almalinux.org:443
+
+# Alpine Linux package CDN over apk (dl-cdn); container image
+# builds. Wildcarded because apk's default repository host is a
+# CDN under this domain rather than a third-party mirror network.
+*.alpinelinux.org:443
+
+# Arch Linux project hosts. pacman's default mirrorlist is a large
+# set of unrelated third-party domains, so this covers only the
+# project's own services; see 'geo.mirror.pkgbuild.com' below for
+# the Arch-operated mirror worth pinning to.
+*.archlinux.org:443
+
+# CentOS Stream metalink endpoint and vendor-owned content
+# (mirrors, stream, vault); all served over HTTPS. See the header
+# note.
+*.centos.org:443
+
+# Debian package archives over apt (deb, security, ftp, snapshot);
+# container/base-image builds. Wildcarded, and on both ports,
+# because apt fails over between mirrors and Debian serves the
+# archive over plain HTTP as well as HTTPS -- package signatures,
+# not TLS, provide the integrity guarantee.
+*.debian.org:443
+*.debian.org:80
+
+# Fedora and EPEL metalink endpoint (mirrors) plus the vendor's
+# own master mirror (dl) and build artifacts (kojipkgs); all
+# served over HTTPS. See the header note.
+*.fedoraproject.org:443
 
 # GitHub hosted-runner control plane (hosted-compute orchestrator and
 # watchdog subdomains on GitHub-hosted runners).
@@ -31,6 +97,26 @@
 # container layers.
 *.githubusercontent.com:443
 
+# openSUSE and SLES package hosts (download, cdn, provo-mirror).
+# download.opensuse.org runs MirrorBrain and redirects to
+# third-party mirrors, so pin to cdn.opensuse.org; see the header
+# note.
+*.opensuse.org:443
+
+# Arch Linux project-operated package mirror (mirror, geo.mirror
+# -- the latter also listed explicitly below, being nested).
+*.pkgbuild.com:443
+
+# Red Hat content delivery and subscription services (cdn,
+# cdn-ubi, console). Unlike the community rebuilds, the Red Hat
+# CDN serves content directly and never redirects off-domain, so
+# this wildcard is sufficient on its own.
+*.redhat.com:443
+
+# Rocky Linux mirrorlist endpoint and vendor-owned content (dl,
+# download, mirrors); all served over HTTPS. See the header note.
+*.rockylinux.org:443
+
 # Sigstore keyless signing/verification (fulcio, rekor, timestamp,
 # tuf-repo-cdn): pypi-publish-action, python-build-action,
 # zizmor-scan-action and ossf/scorecard-action.
@@ -39,6 +125,23 @@
 # SonarQube Cloud API/scanner subdomains (api, scanner):
 # sonarqube-cloud-scan-action.
 *.sonarcloud.io:443
+
+# SUSE subscription, update and registry services (scc, updates,
+# registry); SLES container and package builds.
+*.suse.com:443
+
+# Ubuntu archives and runner-OS services over apt, dirmngr and
+# update-motd: archive, security, ports, esm, changelogs, motd,
+# snapshot and keyserver (the last also reached by the Sonar
+# scanner via sonarqube-cloud-scan-action).
+# Wildcarded on both ports because apt fails over between the
+# mirrors in the runner's /etc/apt/apt-mirrors.txt -- the Azure
+# mirror over HTTP first, then archive.ubuntu.com and
+# security.ubuntu.com over HTTPS. Pinning individual hosts breaks
+# package installs (e.g. graphviz for docs jobs) whenever the
+# primary mirror is unreachable.
+*.ubuntu.com:443
+*.ubuntu.com:80
 
 # SonarQube analysis sensor cache (AWS S3); reached by the Sonar
 # scanner via sonarqube-cloud-scan-action. Both endpoint forms are
@@ -84,8 +187,11 @@ aswf.jfrog.io:443
 # Docker Hub registry auth, used by docker buildx/build-push and helm.
 auth.docker.io:443
 
-# Ubuntu package archive over apt (go-httpbin-action,
-# python-build-action).
+# Ubuntu package archive over apt; the priority-1 mirror in the
+# runner's /etc/apt/apt-mirrors.txt (go-httpbin-action,
+# python-build-action). Required in its own right: it sits two
+# labels below the apex, which '*.ubuntu.com' does not match, so
+# removing this line reintroduces the apt failover breakage.
 azure.archive.ubuntu.com:80
 
 # SonarSource scanner binary download; sonarqube-cloud-scan-action.
@@ -97,14 +203,13 @@ build.automotivelinux.org:443
 # 1Password (AgileBits) cache endpoint (1Password CLI secret fetch).
 cache.agilebits.com:443
 
+# Amazon Linux 2023 repository CDN over dnf; container image
+# builds. Not covered by a wildcard: the on-EC2 repository buckets
+# live under amazonaws.com, which is far too broad to allow-list.
+cdn.amazonlinux.com:443
+
 # Azul Zulu JDK download CDN (Java toolchain setup).
 cdn.azul.com:443
-
-# Debian package archive over apt; container/base-image builds.
-deb.debian.org:80
-
-# Alpine Linux package CDN over apk; container image builds.
-dl-cdn.alpinelinux.org:443
 
 # Google download server, fetched by go-httpbin-action and
 # python-build-action.
@@ -144,10 +249,6 @@ download.sonatype.com:443
 # end-of-life data.
 endoflife.date:443
 
-# Ubuntu ESM package archive over apt (go-httpbin-action,
-# python-build-action).
-esm.ubuntu.com:443
-
 # PostHog EU ingestion endpoint; the AI slop scan workflows
 # (aislop-scan-action) send telemetry here.
 eu.i.posthog.com:443
@@ -161,6 +262,11 @@ files.pythonhosted.org:443
 
 # Mozilla release archive, fetched by python-build-action.
 ftp.mozilla.org:443
+
+# Arch Linux project-operated geo-routed package mirror; the host
+# worth pinning /etc/pacman.d/mirrorlist to. Required in its own
+# right: '*.pkgbuild.com' does not match a nested host.
+geo.mirror.pkgbuild.com:443
 
 # Gerrit (Automotive Linux): git clone via gerrit-clone-action
 # (HTTPS); git-over-SSH clone, review voting and ssh-keyscan (SSH).
@@ -305,10 +411,6 @@ jira.opnfv.org:443
 # package/signature verification.
 keys.openpgp.org:443
 
-# Ubuntu GPG keyserver; public-key fetch via dirmngr, also reached
-# by the Sonar scanner (sonarqube-cloud-scan-action).
-keyserver.ubuntu.com:443
-
 # Jira Cloud (LF Aether tenant); LF project issue tracker.
 lf-aether.atlassian.net:443
 
@@ -337,8 +439,10 @@ logs.o-ran-sc.org:443
 logs.onap.org:443
 logs.opendaylight.org:443
 
-# Ubuntu message-of-the-day service (runner OS).
-motd.ubuntu.com:443
+# CentOS Stream canonical content host; serves directly with no
+# mirror redirect, so it is the host to pin 'baseurl' to. Required
+# in its own right: '*.centos.org' does not match a nested host.
+mirror.stream.centos.org:443
 
 # Nexus IQ / Sonatype Lifecycle server (Linux Foundation tenant);
 # the CLM scan authenticates here and uploads its policy
@@ -482,6 +586,11 @@ static.rust-lang.org:443
 # Google Cloud Storage; Go tooling downloads (go-build/test/audit and
 # sbom-action).
 storage.googleapis.com:443
+
+# Red Hat subscription management (RHSM); 'subscription-manager
+# register' for entitled RHEL builds. Required in its own right:
+# '*.redhat.com' does not match a nested host.
+subscription.rhsm.redhat.com:443
 
 # Go checksum database (go-audit-action, sbom-action).
 sum.golang.org:443

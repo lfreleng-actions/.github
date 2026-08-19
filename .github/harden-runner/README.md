@@ -53,9 +53,15 @@ uses the first file that exists:
 ## File format
 
 One `host[:port]` entry per line, sorted alphabetically (`LC_ALL=C`). A
-`*.host` entry matches subdomains. A `#` introduces a comment, either
-as a full-line comment or trailing on an entry; the parser skips blank
-lines.
+`*.host` entry matches a single label. A `#` introduces a comment,
+either as a full-line comment or trailing on an entry; the parser skips
+blank lines.
+
+A probe under `egress-policy: block` confirmed the matching rule, since
+upstream documents neither case: `*.ubuntu.com` admitted
+`archive.ubuntu.com` but blocked both `azure.archive.ubuntu.com` and
+the bare apex `ubuntu.com`. Any host two or more labels below the apex
+needs its own entry alongside the wildcard, and so does an apex host.
 
 Record why each entry is present in a `# comment` directly above it:
 the service, and the tool, action or task that reaches it. The

@@ -11,8 +11,11 @@ the `lfreleng-actions` organisation. Workflows load it with
 mode, so harden-runner denies any host this file omits.
 
 Each entry is a `host[:port]` token, one per line, and a `*.host`
-wildcard matches subdomains. We keep the file sorted alphabetically
-(`LC_ALL=C`). [`harden-runner-block-action`][block] strips `#`
+wildcard matches a single label — `b.host` but not `a.b.host`, and not
+the bare apex `host`. A probe under `egress-policy: block` confirmed
+this. Hosts two or more labels below the apex, and apex hosts, need
+their own entry alongside the wildcard. We keep the file sorted
+alphabetically (`LC_ALL=C`). [`harden-runner-block-action`][block] strips `#`
 comments and collapses all whitespace (including newlines) into the
 single space-separated string harden-runner's `allowed-endpoints`
 input expects, so the multi-line, commented form in `allow_list.txt`
