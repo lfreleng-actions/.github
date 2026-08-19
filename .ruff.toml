@@ -12,9 +12,14 @@
 # This repository holds the small amount of Python that audits the whole
 # organisation, so it opts into the strictest posture: every stable rule,
 # with a short, documented ignore list for rules that conflict with the
-# formatter or with each other.  Adopting or dropping rules is a
-# deliberate, reviewed edit to this file rather than a side effect of a
-# version bump.
+# formatter or with each other.
+#
+# Note that `ALL` tracks whichever stable rules the installed ruff ships,
+# so the *pinned ruff revision in .pre-commit-config.yaml* is what makes
+# the rule set reproducible.  A ruff version bump can introduce new
+# findings, and that is intentional here: the bump itself is the
+# reviewed change, and new findings surface in that PR rather than
+# accumulating silently.
 #
 # `line-length` and `target-version` are intentionally left unset so that
 # ruff's own defaults continue to apply unchanged.

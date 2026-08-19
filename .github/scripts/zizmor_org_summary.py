@@ -68,25 +68,29 @@ def _gh_executable() -> str:
     return gh
 
 
-def _parse_alert_pages(payload: str) -> list[dict[str, object]]:
+def _parse_alert_pages(payload: str) -> tuple[list[dict[str, object]] | None, str]:
     """Flatten a ``gh api --paginate --slurp`` payload into alert objects.
 
     The payload is one outer JSON array wrapping the per-page arrays.
-    Entries that are not objects are dropped rather than trusted.
+    Returns (alerts, "") on success and (None, error) when the payload
+    does not have that shape: a malformed response must surface as an
+    error rather than an apparently clean repository.
     """
-    pages = cast("object", json.loads(payload))
-    alerts: list[dict[str, object]] = []
+    try:
+        pages = cast("object", json.loads(payload))
+    except json.JSONDecodeError as exc:
+        return None, f"invalid JSON from gh api: {exc}"
     if not isinstance(pages, list):
-        return alerts
+        return None, "malformed gh api response: outer payload is not a list"
+    alerts: list[dict[str, object]] = []
     for page in cast("list[object]", pages):
         if not isinstance(page, list):
-            continue
-        alerts.extend(
-            cast("dict[str, object]", alert)
-            for alert in cast("list[object]", page)
-            if isinstance(alert, dict)
-        )
-    return alerts
+            return None, "malformed gh api response: page is not a list"
+        for alert in cast("list[object]", page):
+            if not isinstance(alert, dict):
+                return None, "malformed gh api response: alert is not an object"
+            alerts.append(cast("dict[str, object]", alert))
+    return alerts, ""
 
 
 def _gh_api_objects(path: str) -> tuple[list[dict[str, object]] | None, str | None]:
@@ -113,7 +117,10 @@ def _gh_api_objects(path: str) -> tuple[list[dict[str, object]] | None, str | No
             check=False,
         )
         if proc.returncode == 0:
-            return _parse_alert_pages(proc.stdout), None
+            alerts, parse_err = _parse_alert_pages(proc.stdout)
+            if alerts is None:
+                return None, parse_err
+            return alerts, None
         error = proc.stderr.strip() or "unknown error"
         if "HTTP 404" in error:
             if _repo_readable(path):
@@ -167,24 +174,32 @@ def _count_repo(
 
 
 def _collect(
-    org: str, matrix: list[dict[str, object]]
+    org: str, matrix: list[object]
 ) -> tuple[
     list[tuple[str, dict[str, int]]],
     list[str],
     list[str],
     list[tuple[str, str]],
 ]:
-    """Count alerts per repository and sort offenders worst-first."""
+    """Count alerts per repository and sort offenders worst-first.
+
+    Malformed matrix entries land in the errors list so the summary
+    reports them (and the job fails) instead of dropping them.
+    """
     offenders: list[tuple[str, dict[str, int]]] = []
     clean: list[str] = []
     no_data: list[str] = []
     errors: list[tuple[str, str]] = []
 
     for entry in matrix:
-        repo = entry.get("repo")
-        branch = entry.get("default_branch")
+        if not isinstance(entry, dict):
+            errors.append((repr(entry), "malformed matrix entry: not an object"))
+            continue
+        entry_map = cast("dict[str, object]", entry)
+        repo = entry_map.get("repo")
+        branch = entry_map.get("default_branch")
         if not isinstance(repo, str) or not isinstance(branch, str):
-            errors.append((str(repo), "malformed matrix entry"))
+            errors.append((str(repo), "malformed matrix entry: repo/default_branch"))
             continue
         counts, err = _count_repo(org, repo, branch)
         if counts is None:
@@ -207,10 +222,18 @@ def _collect(
     return offenders, clean, no_data, errors
 
 
-def _offender_table(offenders: list[tuple[str, dict[str, int]]]) -> list[str]:
-    """Render the worst-first findings table (or the all-clear line)."""
+def _offender_table(
+    offenders: list[tuple[str, dict[str, int]]], *, complete: bool
+) -> list[str]:
+    """Render the worst-first findings table (or the all-clear line).
+
+    The celebratory all-clear only appears when every repository was
+    read successfully; an incomplete run must not claim a clean estate.
+    """
     if not offenders:
-        return ["No open zizmor findings anywhere. :rainbow:"]
+        if complete:
+            return ["No open zizmor findings anywhere. :rainbow:"]
+        return ["No open zizmor findings in the readable repositories."]
 
     totals = dict.fromkeys(SEVERITIES, 0)
     for _, counts in offenders:
@@ -247,22 +270,26 @@ def _repo_list_details(summary: str, names: list[str]) -> list[str]:
     ]
 
 
-def _load_matrix(raw: str) -> list[dict[str, object]]:
-    """Parse the MATRIX environment variable into entry objects."""
+def _load_matrix(raw: str) -> list[object] | None:
+    """Parse the MATRIX environment variable into its raw entries.
+
+    Returns None when the payload is not a JSON array at all; entry
+    validation happens in _collect so malformed entries are reported
+    rather than silently dropped.
+    """
     parsed = cast("object", json.loads(raw))
     if not isinstance(parsed, list):
-        return []
-    return [
-        cast("dict[str, object]", entry)
-        for entry in cast("list[object]", parsed)
-        if isinstance(entry, dict)
-    ]
+        return None
+    return cast("list[object]", parsed)
 
 
 def main() -> int:
     """Render the posture summary; non-zero when any repo is unreadable."""
     org = os.environ["ORG"]
     matrix = _load_matrix(os.environ["MATRIX"])
+    if matrix is None:
+        print("Error: MATRIX is not a JSON array", file=sys.stderr)
+        return 1
 
     offenders, clean, no_data, errors = _collect(org, matrix)
 
@@ -273,7 +300,7 @@ def main() -> int:
     )
 
     lines: list[str] = [f"## Zizmor organisation posture: {org}", "", scanned, ""]
-    lines.extend(_offender_table(offenders))
+    lines.extend(_offender_table(offenders, complete=not errors))
     lines.append("")
     if clean:
         lines.extend(_repo_list_details("Clean repositories", clean))

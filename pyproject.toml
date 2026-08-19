@@ -17,5 +17,8 @@ exclude = [".worktrees", ".mypy_cache", ".ruff_cache"]
 
 [tool.mypy]
 strict = true
+# Match basedpyright's pythonVersion so both type-checking gates
+# enforce the same target regardless of the interpreter running them.
+python_version = "3.11"
 files = [".github/scripts"]
 exclude = ["\\.worktrees"]
