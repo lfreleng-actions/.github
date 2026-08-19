@@ -30,6 +30,14 @@ organisation unless overridden at the repository level.
   Conventional Commits prefixes to labels), and version-resolver settings.
   Any repository without its own `.github/release-drafter.yml` inherits
   this configuration automatically.
+- **[`.github/harden-runner/`](.github/harden-runner/)** — Shared
+  [harden-runner](https://github.com/step-security/harden-runner) egress
+  allow-lists. Organisation workflows run harden-runner in `block` mode
+  and load
+  [`allow_list.txt`](.github/harden-runner/lfreleng-actions/allow_list.txt)
+  at runtime, so harden-runner denies any host the list omits. See
+  [Harden-runner egress allow-list](#harden-runner-egress-allow-list)
+  below for the wildcard matching rules, which are easy to get wrong.
 
 ### Workflows
 
@@ -96,6 +104,58 @@ repository.
 
 Repositories that need custom categories or version-resolver rules can
 override the defaults by adding their own `.github/release-drafter.yml`.
+
+### Harden-runner egress allow-list
+
+Organisation workflows run
+[harden-runner](https://github.com/step-security/harden-runner) under
+`egress-policy: block`, which denies every outbound connection the
+policy does not name. The permitted endpoints live in
+[`.github/harden-runner/lfreleng-actions/allow_list.txt`](.github/harden-runner/lfreleng-actions/allow_list.txt),
+loaded at runtime by
+[harden-runner-block-action](https://github.com/lfreleng-actions/harden-runner-block-action).
+The [directory README](.github/harden-runner/README.md) covers the file
+format and layout.
+
+#### Wildcard matching covers one label
+
+A `*.host` entry matches a single label. It does not match a nested
+subdomain, and it does not match the bare apex. harden-runner documents
+neither case, so a controlled probe under `egress-policy: block`
+established the behaviour. A policy carrying `*.ubuntu.com` and no
+other `ubuntu.com` entry gave:
+
+| Target | Labels below apex | Result |
+| --- | --- | --- |
+| `archive.ubuntu.com` | 1 | allowed |
+| `azure.archive.ubuntu.com` | 2 | **blocked** |
+| `ubuntu.com` | 0 (apex) | **blocked** |
+
+A second run adding `azure.archive.ubuntu.com` explicitly admitted that
+host moments later, so a mirror outage does not account for the
+difference. Note that `egress-policy: audit` cannot answer this
+question, because audit mode never enforces `allowed-endpoints`.
+
+Two consequences when editing the allow-list:
+
+- A host two or more labels below its apex needs its own entry
+  **alongside** the wildcard. Deleting such an entry as "redundant"
+  breaks the workflows that reach it.
+- An apex host needs its own entry as well, which is why
+  `sonarcloud.io:443` sits beside `*.sonarcloud.io:443`.
+
+#### Distribution package mirrors
+
+One gap no allow-list can close: Fedora, EPEL, CentOS Stream, Rocky,
+AlmaLinux, openSUSE and Arch ship repository configuration that resolves
+a metalink or mirrorlist, then downloads from whichever third-party
+mirror it returns. Those mirrors share no parent domain and change by
+source IP and by the hour, so a vendor wildcard admits the mirror list
+and then the next connection fails.
+
+Pin the repository `baseurl` to the vendor-owned HTTPS host and clear
+`metalink`/`mirrorlist` in the job instead. The allow-list header names
+the host to use for each distribution.
 
 ### Organisation-wide zizmor audit
 
