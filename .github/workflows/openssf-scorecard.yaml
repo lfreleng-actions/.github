@@ -27,12 +27,36 @@ permissions: {}
 jobs:
   openssf-scorecard:
     name: "OpenSSF Scorecard"
+    # Migrated from lfit/releng-reusable-workflows, which is retiring,
+    # to the security lane in lfreleng-actions/security-workflows.
+    #
+    # Every input is optional and the defaults reproduce the previous
+    # behaviour: publish_results and upload_sarif are both true, so the
+    # badge and the code-scanning dashboard keep updating. This caller
+    # therefore passes none.
+    #
+    # The change is additive as far as checks go. The predecessor
+    # already ran jobs named 'Scan' and 'Link'; the lane keeps both and
+    # adds 'Validate Workflow Inputs', which fails bad inputs in
+    # seconds rather than after a full analysis. Nothing here is named
+    # by a ruleset and there is no pull_request trigger, so none of the
+    # three gates a merge.
     # yamllint disable-line rule:line-length
-    uses: lfit/releng-reusable-workflows/.github/workflows/reuse-openssf-scorecard.yaml@f7aae218f1fa0257e3dcd19f5c7d3f88f482f266  # v0.10.1
+    uses: lfreleng-actions/security-workflows/.github/workflows/openssf-scorecard.yaml@5882f138dd24fcd6cb4ebc8bb3a68cee45a437a6  # v0.3.0
     permissions:
       # Needed to read repository contents (checkout, etc.).
       contents: read
       security-events: write  # Upload results to the code-scanning dashboard
       id-token: write  # Publish results and obtain a Scorecard badge via OIDC
-      # Uncomment the permission below if installing in a private repository.
-      # actions: read
+      # The lane's scan job declares this for upload-sarif, and a
+      # called workflow cannot hold more permission than its caller,
+      # so omitting it would quietly cap the lane below what it asks
+      # for. Harmless on a public repository such as this one.
+      actions: read  # upload-sarif reads run info on private repos
+      # A PRIVATE repository needs three further reads, or Scorecard
+      # reports 'Resource not accessible by integration' and loses the
+      # commit and SAST signals. Not enabled here because this
+      # repository is public:
+      # issues: read
+      # pull-requests: read
+      # checks: read
