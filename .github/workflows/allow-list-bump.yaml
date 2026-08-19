@@ -69,6 +69,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Turn off GitHub CLI telemetry. Steps below shell out to 'gh', which
+  # otherwise POSTs usage events to cafe.github.com -- an endpoint no
+  # job here needs, and one the org egress allow-list blocks, so every
+  # run reports a spurious blocked connection. GH_TELEMETRY takes
+  # precedence over DO_NOT_TRACK, so this one variable covers both.
+  GH_TELEMETRY: 'false'
   # Branch name is derived from the target version, so a re-run updates
   # the existing pull request rather than opening a duplicate.
   BRANCH_PREFIX: 'chore/allow-list'
