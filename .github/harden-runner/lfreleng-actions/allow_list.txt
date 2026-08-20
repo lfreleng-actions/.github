@@ -611,6 +611,14 @@ test.pypi.org:443
 # fetched by 'gh attestation verify' (zizmor-scan-action).
 tmaproduction.blob.core.windows.net:443
 
+# Anchore toolbox data; grype's app-update check reads its own
+# latest-version file (grype/releases/latest/VERSION) on every
+# invocation, and anchore/scan-action/download-grype reads it when
+# resolving a floating grype version. grype-scan-action suppresses
+# the check via GRYPE_CHECK_FOR_APP_UPDATE; callers invoking grype
+# directly still reach it.
+toolbox-data.anchore.io:443
+
 # GitHub TUF trust root, fetched by 'gh attestation verify' when
 # checking the Sigstore provenance of the zizmor binary
 # (zizmor-scan-action).
