@@ -368,6 +368,11 @@ hyperledger-fabric.readthedocs.io:443
 # Artifactory (Hyperledger); LF project artifact repository.
 hyperledger.jfrog.io:443
 
+# Docker Hub registry: image descriptor resolution. Clients that read
+# an image straight from the registry, without a local daemon, hit
+# this before registry-1.docker.io (grype-scan-action).
+index.docker.io:443
+
 # Jenkins CI (EdgeX); LF project infrastructure.
 jenkins.edgexfoundry.org:443
 
