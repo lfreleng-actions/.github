@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Tool configuration only: this repository is not a Python package, but
+# the organisation-audit scripts under .github/scripts are held to the
+# strictest available linting posture.
+
+[tool.basedpyright]
+# "all" is the strictest mode basedpyright offers: every diagnostic
+# rule, a superset of "strict" and of the default "recommended".  The
+# editor language server and the pre-commit hook both read this file,
+# so local and CI results agree.
+typeCheckingMode = "all"
+pythonVersion = "3.11"
+include = [".github/scripts"]
+exclude = [".worktrees", ".mypy_cache", ".ruff_cache"]
+
+[tool.mypy]
+strict = true
+# Match basedpyright's pythonVersion so both type-checking gates
+# enforce the same target regardless of the interpreter running them.
+python_version = "3.11"
+files = [".github/scripts"]
+exclude = ["\\.worktrees"]
