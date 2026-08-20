@@ -2,7 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2025 The Linux Foundation
 
-# Verifies action/workflow calls are pinned to SHA commit values
+# GitHub Actions pin audit (organisation-wide).
+#
+# Thin caller for the reusable lane in lfreleng-actions/security-workflows.
+# This file is the canonical copy enforced organisation-wide via the
+# mandatory-workflows ruleset, so the audit runs on every targeted
+# repository without being copied into each one (it also self-audits
+# this repository on PRs).
+#
+# Enforcing: findings fail the job. The lane offers no permit-fail
+# escape hatch, unlike package-hardening-audit; an unpinned 'uses:'
+# is an unreviewed supply-chain dependency, so it blocks.
 name: 'SHA Pinned Actions 📌'
 
 # yamllint disable-line rule:truthy
@@ -27,6 +37,15 @@ jobs:
   verify:
     name: 'Check SHA pinned actions'
     # yamllint disable-line rule:line-length
-    uses: lfit/releng-reusable-workflows/.github/workflows/reuse-verify-github-actions.yaml@f7aae218f1fa0257e3dcd19f5c7d3f88f482f266  # v0.10.1
+    uses: lfreleng-actions/security-workflows/.github/workflows/action-pin-audit.yaml@5882f138dd24fcd6cb4ebc8bb3a68cee45a437a6  # v0.3.0
     permissions:
-      contents: read
+      contents: read  # Lane checks out the repository under audit
+    with:
+      # Passed explicitly rather than left to the lane default. On a
+      # pull request the audit covers the workflow and composite action
+      # files that the change touched, not the whole repository, which
+      # keeps the gate proportionate on repositories still working down
+      # to zero findings. Naming it here pins the scope of a merge gate
+      # against a default changing in another repository. Set it true to
+      # audit everything on every event.
+      full_scan: false
