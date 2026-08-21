@@ -75,10 +75,9 @@ organisation unless overridden at the repository level.
   [aislop](https://github.com/scanaislop/aislop). Runs on every pull
   request across the organisation as a *required workflow* via an
   organisation ruleset, scans **the files the PR changes** (not the
-  whole repository), and
-  runs in **advisory mode** (never fails) until an org admin sets the
-  `AISLOP_ENFORCE`
-  organisation variable to `true`; see
+  whole repository), and **blocks** a pull request whose changed files
+  carry any finding, at any severity. The `AISLOP_GATE_LEVEL`
+  organisation or repository variable relaxes or tightens that; see
   [Organisation-wide aislop scan](#organisation-wide-aislop-scan) below
   for the one-time org-admin configuration.
 - **[`aislop-sarif-publish.yaml`](.github/workflows/aislop-sarif-publish.yaml)**
@@ -384,16 +383,22 @@ files 0–100 and reports each finding with severity and location.
 - **Gating**: the scan step always succeeds; a separate gate step
   decides enforcement based on the organisation variable
   **`AISLOP_GATE_LEVEL`**:
-  - **`high`** (the default when the variable is unset) — the run
-    **fails** when the pull request introduces any **high-severity**
-    finding (an aislop error-severity diagnostic, the `high` rating
-    surfaced in code scanning). Warnings and info stay advisory. This
-    is the estate-wide gate now that the estate carries no outstanding
-    high-severity findings.
+  - **`any`** (the default when the variable is unset) — the run
+    **fails** when the changed files carry **any finding, at any
+    severity**: high, medium and low all block. Because the scan
+    scope is the pull request's changed files, passing this gate
+    means the pull request adds no findings.
+  - **`high`** — the run fails on **high-severity** findings alone (an
+    aislop error-severity diagnostic). Medium and low stay advisory.
+    This was the previous default; use it as a per-repository escape
+    hatch while clearing an existing backlog.
   - **`all`** — the run fails on the full aislop quality gate (score
     below the configured threshold **or** any high-severity finding).
-    The strictest tier.
   - **`off`** — advisory: the workflow reports without blocking.
+
+  A **repository** variable of the same name overrides the
+  organisation value, so a repository carrying a backlog can sit at
+  `high` without weakening the estate-wide default.
 
   For backward compatibility, when `AISLOP_GATE_LEVEL` is unset the
   legacy **`AISLOP_ENFORCE`** `= true` variable still selects the
@@ -422,13 +427,14 @@ ruleset, mirroring the zizmor audit:
    - **Repository**: `lfreleng-actions/.github`
    - **Workflow file path**: `.github/workflows/aislop.yaml`
    - **Ref**: `main`
-5. The `high` gate level is the default, so the check blocks a merge
-   whenever a pull request introduces a high-severity finding once you
-   enable **Require workflows to pass before merging**. To report
-   without blocking first, either leave **Do not require workflows
-   to pass before merging** *checked* or set the `AISLOP_GATE_LEVEL`
-   organisation variable to `off`; raise it to `all` to also enforce
-   the score threshold.
+5. The `any` gate level is the default, so the check blocks a merge
+   whenever a pull request's changed files carry a finding of any
+   severity once you enable **Require workflows to pass before
+   merging**. To report without blocking first, either leave **Do not
+   require workflows to pass before merging** *checked* or set the
+   `AISLOP_GATE_LEVEL` organisation variable to `off`; `high`
+   restores the earlier behaviour, which blocked on high severity
+   alone, and `all` enforces the score threshold as well.
 6. Click **Create**.
 
 After saving, every pull request opened in the organisation will

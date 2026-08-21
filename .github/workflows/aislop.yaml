@@ -22,21 +22,29 @@
 # separate gate step decides enforcement. The gate level is chosen by
 # the organisation variable AISLOP_GATE_LEVEL:
 #
-#   high (default)  Block the run when the pull request introduces any
-#                   HIGH-severity finding (aislop error-severity, the
-#                   'high' rating surfaced in code scanning). Warnings
-#                   and info remain advisory. This is the estate-wide
-#                   gate now that all high-severity findings have been
-#                   remediated.
+#   any (default)   Block the run when the pull request's changed
+#                   files carry ANY finding, at any severity: high,
+#                   medium and low all block. This is the "no new
+#                   slop" gate: the scan scope is the changed files,
+#                   so passing it means the pull request is not adding
+#                   findings.
+#   high            Block only on HIGH-severity findings (aislop
+#                   error-severity). Medium and low remain advisory.
+#                   The previous default; use it as a per-repository
+#                   escape hatch while a backlog is remediated.
 #   all             Block on the full aislop quality gate (score below
 #                   the configured threshold OR any high-severity
-#                   finding). The strictest tier.
+#                   finding).
 #   off             Advisory only: report via the step summary and
 #                   inline annotations without blocking anything.
 #
+# A repository variable of the same name overrides the organisation
+# value, so a repository carrying a pre-existing backlog can sit at
+# 'high' without weakening the estate-wide default.
+#
 # For backward compatibility, when AISLOP_GATE_LEVEL is unset the
 # legacy AISLOP_ENFORCE='true' variable still selects the 'all' tier;
-# otherwise the default is 'high'.
+# otherwise the default is 'any'.
 #
 # See README.md ("Organisation-wide aislop scan") for org-admin setup.
 
@@ -105,10 +113,11 @@ jobs:
       - name: 'Enforce quality gate'
         shell: 'bash'
         env:
-          # Gate level: 'high' (default) blocks on high-severity
-          # findings only; 'all' blocks on the full aislop gate; 'off'
-          # keeps the run advisory. AISLOP_ENFORCE is the legacy switch
-          # honoured only when AISLOP_GATE_LEVEL is unset.
+          # Gate level: 'any' (default) blocks on any finding at any
+          # severity on the changed files; 'high' blocks on
+          # high-severity only; 'all' blocks on the full aislop gate;
+          # 'off' keeps the run advisory. AISLOP_ENFORCE is the legacy
+          # switch honoured only when AISLOP_GATE_LEVEL is unset.
           AISLOP_GATE_LEVEL: '${{ vars.AISLOP_GATE_LEVEL }}'
           AISLOP_ENFORCE: '${{ vars.AISLOP_ENFORCE }}'
           SCAN_RC: '${{ steps.scan.outputs.exit-code }}'
@@ -119,20 +128,20 @@ jobs:
 
           # Resolve the effective gate level. AISLOP_GATE_LEVEL wins;
           # when it is unset, the legacy AISLOP_ENFORCE='true' selects
-          # the strict 'all' tier, otherwise the default is 'high'.
+          # the strict 'all' tier, otherwise the default is 'any'.
           level="${AISLOP_GATE_LEVEL:-}"
           if [ -z "${level}" ]; then
             if [ "${AISLOP_ENFORCE:-}" = 'true' ]; then
               level='all'
             else
-              level='high'
+              level='any'
             fi
           fi
           case "${level}" in
-            high|all|off) ;;
+            any|high|all|off) ;;
             *)
               echo "::error::invalid AISLOP_GATE_LEVEL '${level}';" \
-                   "expected 'high', 'all', or 'off'"
+                   "expected 'any', 'high', 'all', or 'off'"
               exit 1
               ;;
           esac
@@ -164,18 +173,63 @@ jobs:
             echo "::error::aislop report not found; cannot evaluate gate"
             exit 1
           fi
-          # Count HIGH-severity findings on the changed files. aislop
-          # maps error-severity diagnostics to SARIF level 'error', the
-          # 'high' rating surfaced in code scanning. The action leaves
-          # the JSON report in place (only its install dir is cleaned),
-          # so the report path stays readable here.
+          # A failed scan can still emit valid JSON, for example an
+          # object carrying an 'error' key and no diagnostics. The
+          # counting below uses jq's optional iterator, which turns
+          # such a report into zero findings and would pass the gate
+          # on a scan that never ran. Require the diagnostics array
+          # explicitly and fail closed when it is absent.
+          if ! jq -e '(.diagnostics | type) == "array"' \
+               "${REPORT_FILE}" > /dev/null 2>&1; then
+            echo "::error::aislop report carries no diagnostics array;" \
+                 "treating this as a failed scan rather than a clean" \
+                 "result (gate exit code ${SCAN_RC})"
+            exit 1
+          fi
+          # Count findings on the changed files. aislop maps
+          # error-severity diagnostics to SARIF 'error' (high in code
+          # scanning), warning to medium, and info to low. The action
+          # leaves the JSON report in place (only its install dir is
+          # cleaned), so the report path stays readable here.
           high="$(jq '[.diagnostics[]?
                       | select(.severity == "error")] | length' \
                   "${REPORT_FILE}")"
-          echo "High-severity (error) aislop findings: ${high}"
+          medium="$(jq '[.diagnostics[]?
+                        | select(.severity == "warning")] | length' \
+                    "${REPORT_FILE}")"
+          low="$(jq '[.diagnostics[]?
+                     | select(.severity == "info")] | length' \
+                 "${REPORT_FILE}")"
+          # Total counts every diagnostic, whatever its severity, so a
+          # severity this gate does not name still blocks.
+          total="$(jq '[.diagnostics[]?] | length' "${REPORT_FILE}")"
+          echo "aislop findings on changed files: ${total}" \
+               "(high ${high}, medium ${medium}, low ${low})"
           echo "aislop gate exit code: ${SCAN_RC}"
 
           case "${level}" in
+            any)
+              # The scan scope is the changed files, so a finding here
+              # is one this pull request adds, or leaves behind in code
+              # it touched. Every severity blocks, low included.
+              if [ "${total}" != '0' ]; then
+                echo "::error::aislop quality gate failed:" \
+                     "${total} finding(s) on the changed files" \
+                     "(high ${high}, medium ${medium}, low ${low});" \
+                     "a pull request must not add findings." \
+                     "Remediate them, or set the repository variable" \
+                     "AISLOP_GATE_LEVEL=high while an existing backlog" \
+                     "is cleared."
+                exit 1
+              fi
+              if [ "${SCAN_RC}" != '0' ]; then
+                msg='aislop score gate did not pass (advisory at the'
+                msg="${msg} 'any' gate level; set AISLOP_GATE_LEVEL=all"
+                msg="${msg} to enforce the score threshold too)"
+                echo "::warning::${msg}"
+              fi
+              echo 'aislop quality gate passed (no findings).'
+              ;;
             high)
               if [ "${high}" != '0' ]; then
                 echo "::error::aislop quality gate failed:" \
