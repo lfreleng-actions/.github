@@ -135,6 +135,7 @@ with signed tags and provenance attestations.
 | -------------------------------- | ----------------------------------------------------------------------- |
 | [1password-secrets-action]       | Securely retrieve secrets from 1Password vaults                         |
 | [credential-load-action]         | Retrieve project/repository specific credentials from a 1Password vault |
+| [grype-scan-action]              | Scan SBOMs, images, or directories for vulnerabilities with Grype       |
 | [harden-runner-block-action]     | Load an egress allow-list for step-security/harden-runner block mode    |
 | [sigul-sign-docker]              | Sign build packages, artefacts, and git tags using Sigul                |
 | [sonarqube-cloud-scan-action]    | Perform a SonarQube Cloud scan and upload the results                   |
@@ -448,6 +449,7 @@ to all repositories unless otherwise stated.
 <!-- Security & Credentials Actions -->
 [1password-secrets-action]: https://github.com/lfreleng-actions/1password-secrets-action
 [credential-load-action]: https://github.com/lfreleng-actions/credential-load-action
+[grype-scan-action]: https://github.com/lfreleng-actions/grype-scan-action
 [harden-runner-block-action]: https://github.com/lfreleng-actions/harden-runner-block-action
 [sigul-sign-docker]: https://github.com/lfreleng-actions/sigul-sign-docker
 [sonarqube-cloud-scan-action]: https://github.com/lfreleng-actions/sonarqube-cloud-scan-action
