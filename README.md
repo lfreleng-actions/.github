@@ -44,9 +44,10 @@ organisation unless overridden at the repository level.
 - **[`allow-list-bump.yaml`](.github/workflows/allow-list-bump.yaml)** —
   A scheduled (Monday 05:00 UTC) sweep that bumps stale
   `step-security/harden-runner` egress allow-list pins across the
-  `*-workflows` family and opens a pull request per repository. These
-  pins are values of `config:` and `default:` keys rather than `uses:`
-  references, so Dependabot cannot see them and they drift. See
+  `*-workflows` family and opens a pull request per repository, authored
+  by the organisation's bot. These pins are values of `config:` and
+  `default:` keys rather than `uses:` references, so Dependabot cannot
+  see them and they drift. See
   [Allow-list bump sweep](#allow-list-bump-sweep) below for setup.
 - **[`repo-audit.yaml`](.github/workflows/repo-audit.yaml)** — Runs on
   a weekly schedule (Monday 10:00 UTC). Compares the current list of
@@ -595,9 +596,20 @@ block-mode jobs fail later with confusing `ECONNREFUSED` errors against hosts ad
 to the allow-list weeks earlier.
 
 Every Monday, `allow-list-bump.yaml` enumerates the in-scope
-repositories, runs [`gha-workflow-linter`][linter] against each with
-`--update-allow-list`, and opens a pull request wherever a pin moved. A
-Slack digest links every pull request raised.
+repositories, clones them side by side, runs [`gha-workflow-linter`][linter]
+once across the whole set with `--multi-repo --update-allow-list`, and
+opens a pull request wherever a pin moved. A Slack digest links every
+pull request.
+
+One sweep rather than a job per repository: a single hardened runner,
+one toolchain install and one linter process cover the whole family,
+and the job that produces the digest also sends it, rather than
+passing it between jobs as artefacts. A multi-repository run does
+share one resolution cache, but that is not what earns the
+arrangement here: every repository in scope sets a Dependabot
+cooldown, and the linter bypasses that cache whenever a cooldown
+applies, so each repository still resolves the allow-list host for
+itself.
 
 [linter]: https://github.com/lfreleng-actions/gha-workflow-linter
 
@@ -620,11 +632,79 @@ repositories from every run.
   confined to allow-list pins. Action version bumps belong to Dependabot, and
   mixing them makes the change harder to review and harder to revert.
 - The pinned reference and its version comment change, and nothing
-  else: quoting style, spacing and comment position all survive.
+  else: quoting style, spacing and comment position all survive. The
+  release the sweep moves to is the newest one eligible under the
+  repository's own Dependabot cooldown, which is not always the newest
+  released, and the pull request says so rather than calling it
+  current.
 - The sweep leaves alone any pin carrying an `allow-list-pin-ok`
   directive.
-- The branch name derives from the target version, so a re-run updates
-  the open pull request rather than opening a duplicate.
+- Each repository carries at most one sweep pull request, on a fixed
+  `chore/allow-list-bump` branch. A newer release supersedes the open
+  proposal in place rather than opening a second one beside it. A
+  re-run leaves the branch untouched when the open pull request already
+  carries the identical change, so an unreviewed pull request does not
+  reset its own review state every week; it rewrites the branch when
+  the target version moves or a pin appears that the proposal does not
+  yet cover. The comparison spans the files the pull request already
+  changes and the files this run rewrites, matching the two sets and
+  then their contents, so a commit merged into the default branch for
+  unrelated reasons does not force a rewrite. It looks at file contents
+  alone, so a hand-edited title or a description that has fallen out of
+  step gets put right without a commit. Comparing the description folds
+  out the link to the sweep run that last touched it, which would
+  otherwise differ every week.
+- Each rewrite builds its commit on a staging ref at the default branch
+  and then moves the proposal branch onto it. The proposal branch must
+  never point at the default branch, even for an instant, because
+  GitHub closes a pull request the moment head and base coincide,
+  taking its number, review threads and approvals with it. Building on
+  the default branch also keeps a workflow added there since the
+  proposal opened from landing as an add/add conflict, and keeps an
+  unrelated edit to a proposed file out of the diff under review.
+- The default branch can move while the sweep runs, between taking the
+  checkouts and writing. Each proposal builds on where that branch now
+  stands, not where the checkout found it. Where it moved under a file
+  the sweep rewrites, the checkout no longer describes that file and
+  any proposal from it would revert whatever landed, so the sweep
+  leaves that repository for the next run — whose checkout includes the
+  change — and names it in the run and the digest. Retiring a proposal
+  waits on any movement at all, since it rests entirely on the checkout
+  showing nothing to do and no later run can reopen what it closes.
+- A proposal that no longer changes anything gets retired. When the
+  default branch reaches the selected release by some other route, or
+  its pins already sit ahead of it, the sweep closes the open pull
+  request, deletes the branch and says so in the digest, rather than
+  leaving a no-op sitting in the review queue. A repository that has
+  removed its last workflow counts here too: the linter then reports a
+  clean result with no findings, and its proposal has nothing left to
+  propose. A repository whose allow-list host would not resolve gets
+  nothing done to it: with the host unknown, "nothing to fix" and
+  "could not look" are indistinguishable, and the run fails rather than
+  acting on the difference.
+- A stale pin the linter can see but cannot rewrite — one inside a
+  multi-line scalar, for instance — leaves the repository neither
+  current nor fixable. The sweep names it in the run and in the digest
+  and leaves every proposal alone, rather than retiring a pull request
+  in a repository that is still stale. Where such a repository already
+  carries an open proposal, the digest links and counts it as open, and
+  notes what still needs doing by hand.
+- Nearly every repository pins one allow-list host, and the pull
+  request title names the release it moves to. A repository pinning
+  more than one resolves more than one release, so naming a single
+  version would describe part of the change as though it were the
+  whole. Those pull requests carry a title without a version, list
+  every host and its release in the body and the commit message, and
+  the run warns that it found more than one.
+- Pull requests come from the organisation's `lf-releng-bot` GitHub
+  App, not from a maintainer. Code review is mandatory across the
+  organisation and nobody may approve their own work, so a sweep
+  raising pull requests as a person would produce changes that person
+  could not merge.
+- Commits reach the branch through the GitHub API rather than a push, so
+  GitHub signs them. The default branch of every repository in scope
+  carries a `required_signatures` rule, which an unverified commit
+  would fail.
 - A `dry-run` dispatch input reports what would change without opening
   anything.
 - The workflow pins the linter version in `LINTER_VERSION`, matching the
@@ -636,19 +716,34 @@ repositories from every run.
 
 <!-- markdownlint-disable MD013 -->
 
-| Name                      | Kind     | Purpose                                                                                                                               |
-| ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `ALLOWLIST_BUMP_PAT`      | Secret   | Classic PAT with `repo` and `read:org`. The ephemeral `GITHUB_TOKEN` cannot push branches or open pull requests in another repository |
-| `ALLOW_LIST_BUMP_NAME`    | Variable | Commit author and committer name                                                                                                      |
-| `ALLOW_LIST_BUMP_EMAIL`   | Variable | Commit author and committer email, used for the DCO sign-off                                                                          |
-| `ALLOW_LIST_BUMP_EXCLUDE` | Variable | Optional extra exclude globs                                                                                                          |
-| `SLACK_BOT_TOKEN`         | Secret   | Shared with the other scheduled workflows                                                                                             |
-| `SLACK_CHANNEL_ID`        | Variable | Shared with the other scheduled workflows                                                                                             |
+| Name                        | Kind     | Purpose                                                                                                                  |
+| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `LF_RELENG_BOT_CLIENT_ID`   | Variable | Client ID of the `lf-releng-bot` GitHub App, shared with the other bot-authored workflows                                |
+| `LF_RELENG_BOT_PRIVATE_KEY` | Secret   | Private key (PEM) for that App. The sweep mints a short-lived installation token scoped to the repositories in the sweep |
+| `ALLOW_LIST_BUMP_EXCLUDE`   | Variable | Optional extra exclude globs                                                                                             |
+| `SLACK_BOT_TOKEN`           | Secret   | Shared with the other scheduled workflows                                                                                |
+| `SLACK_CHANNEL_ID`          | Variable | Shared with the other scheduled workflows                                                                                |
 
 <!-- markdownlint-enable MD013 -->
 
+The bot App must have write access to `contents`, `pull requests` and
+`workflows` on every repository the sweep covers. `workflows` matters in
+its own right: every file the sweep rewrites lives under
+`.github/workflows`. Minting the token fails outright when a repository
+in scope is missing from the installation.
+
+The bot's token writes and does nothing else. Repository discovery and
+the linter's own lookups use the ephemeral `GITHUB_TOKEN`: listing an
+organisation's public repositories needs no more, and
+`.github/scan-scope.json` sets `scan_private` to false. The lookups read
+public release data right across GitHub — the allow-list host, and every
+organisation whose actions these workflows call — almost none of which
+lies inside the App's repository selection. A cold-cache sweep of the
+whole family measured 2 REST calls and 174 GraphQL points, against a
+limit of 1000 per hour for each.
+
 All jobs run in the `production` environment, so environment protection
-rules can guard the PAT and the Slack token.
+rules can guard the App key and the Slack token.
 
 ### Repository Audit Workflow
 
