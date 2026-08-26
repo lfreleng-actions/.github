@@ -15,21 +15,43 @@
 # means a block-mode job lacks newly allow-listed endpoints, producing
 # confusing ECONNREFUSED failures long after the allow-list was fixed.
 #
-# Every Monday this enumerates the in-scope repositories, runs
-# gha-workflow-linter against each with --update-allow-list, and opens a
-# pull request wherever a pin moved. A Slack digest links every PR raised;
-# a separate job reports a failed run.
+# Every Monday this enumerates the in-scope repositories, clones them
+# side by side, runs gha-workflow-linter once across the whole set with
+# --multi-repo --update-allow-list, and opens a pull request wherever a
+# pin moved. A Slack digest links every pull request; a separate job
+# reports a failed run.
 #
-# Scope is the *-workflows family: those host the reusable build workflows
-# consumers actually run, where a missing endpoint breaks real builds.
-# Standard GitHub plumbing elsewhere in the organisation touches a small,
-# stable endpoint set, so a pin several versions behind has little
-# practical effect and weekly PRs against it would be review noise. Run
-# this manually with an extra-include to sweep something else.
+# One sweep rather than a job per repository: a single hardened runner,
+# one toolchain install and one linter process cover the whole family,
+# and the Slack digest is assembled in the job that produced it rather
+# than passed between matrix jobs as artefacts.
 #
-# Requires a PAT able to push branches and open pull requests across the
-# organisation: the ephemeral GITHUB_TOKEN cannot do either in another
-# repository. A classic PAT needs the scopes: repo, read:org.
+# Not, however, for the reason a reader might expect. A multi-repository
+# run does share one resolution cache, but every repository in scope
+# sets a Dependabot cooldown, and the linter bypasses that cache
+# whenever a cooldown applies, since a cached answer would then depend
+# on a policy the cache does not record. Each repository still resolves
+# the allow-list host for itself.
+#
+# Scope is the *-workflows family: those host the reusable build
+# workflows consumers actually run, where a missing endpoint breaks real
+# builds. Standard GitHub plumbing elsewhere in the organisation touches
+# a small, stable endpoint set, so a pin several versions behind has
+# little practical effect and weekly pull requests against it would be
+# review noise. Run this manually with an extra-include to sweep
+# something else.
+#
+# Two properties of the pull requests it raises are deliberate:
+#
+#   Authorship is the LF RelEng bot GitHub App, not a maintainer. Code
+#   review is mandatory across the organisation and nobody may approve
+#   their own work, so a sweep raising pull requests as a person would
+#   produce changes that person could not merge.
+#
+#   Commits are created through the GitHub API rather than pushed, so
+#   GitHub signs them. The default branch of every repository in scope
+#   carries a required_signatures rule; a locally made commit would be
+#   unverified.
 
 name: 'Allow-List Bump 🔗'
 
@@ -75,14 +97,17 @@ env:
   # run reports a spurious blocked connection. GH_TELEMETRY takes
   # precedence over DO_NOT_TRACK, so this one variable covers both.
   GH_TELEMETRY: 'false'
-  # Branch name is derived from the target version, so a re-run updates
-  # the existing pull request rather than opening a duplicate.
-  BRANCH_PREFIX: 'chore/allow-list'
+  # One fixed branch per repository, reused every week. A branch keyed
+  # on the target version would leave last month's pull request open
+  # beside this month's once the target moved on; reusing one branch
+  # means a newer release supersedes the proposal in place, and no
+  # repository ever carries more than one sweep pull request.
+  BRANCH: 'chore/allow-list-bump'
   # Pinned deliberately. Every action here is pinned to a commit, and an
   # unpinned install would let one bad release reach every repository in
   # the sweep at once, raising pull requests from it. Bump when the
   # linter releases something this sweep needs.
-  LINTER_VERSION: '1.4.0'
+  LINTER_VERSION: '1.5.1'
 
 jobs:
   discover:
@@ -99,25 +124,30 @@ jobs:
       extra-include: '*-workflows,${{ inputs.extra-include }}'
       extra-exclude: '${{ vars.ALLOW_LIST_BUMP_EXCLUDE }}'
     secrets:
-      token: '${{ secrets.ALLOWLIST_BUMP_PAT }}'
+      # Listing an organisation's *public* repositories needs no
+      # privilege beyond a valid token, and .github/scan-scope.json sets
+      # scan_private false, so the ephemeral token suffices. The bot
+      # credentials are reserved for the writes, keeping discovery at
+      # the lowest privilege that does the job. Should a private
+      # repository ever come into scope, this must become a credential
+      # that can see it.
+      token: '${{ secrets.GITHUB_TOKEN }}'
 
   bump:
-    name: 'Bump (${{ matrix.repo }})'
+    name: 'Sweep allow-list pins'
     needs: 'discover'
     if: needs.discover.outputs.count != '0'
     runs-on: 'ubuntu-latest'
-    timeout-minutes: 15
-    # Run in a dedicated environment so execution and the PAT can be
-    # gated by environment protection rules (satisfies zizmor's
-    # secrets-outside-env).
+    timeout-minutes: 30
+    # Run in a dedicated environment so execution and the bot's private
+    # key can be gated by environment protection rules (satisfies
+    # zizmor's secrets-outside-env).
     environment: 'production'
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      max-parallel: 6
-      matrix:
-        include: ${{ fromJson(needs.discover.outputs.matrix) }}
+    outputs:
+      digest: '${{ steps.sweep.outputs.digest }}'
+      raised: '${{ steps.sweep.outputs.raised }}'
     steps:
       # Load the egress allow-list out-of-band from lfreleng-actions/.github
       # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
@@ -134,17 +164,105 @@ jobs:
           allowed-endpoints: >
             ${{ env.CONNECTION_ALLOW_LIST }}
 
-      - name: 'Checkout repository under sweep'
+      - name: 'Check bot credentials'
+        shell: bash
+        env:
+          CLIENT_ID: '${{ vars.LF_RELENG_BOT_CLIENT_ID }}'
+          # yamllint disable-line rule:line-length
+          KEY_PRESENT: "${{ secrets.LF_RELENG_BOT_PRIVATE_KEY != '' }}"
+        run: |
+          # Check bot credentials
+          # Name the missing piece. The previous incarnation of this
+          # sweep failed every week on an unprovisioned credential, and
+          # said only that a token was unavailable several steps later.
+          set -euo pipefail
+          missing=''
+          if [ -z "${CLIENT_ID}" ]; then
+            missing='vars.LF_RELENG_BOT_CLIENT_ID'
+          fi
+          if [ "${KEY_PRESENT}" != 'true' ]; then
+            missing="${missing:+${missing} and }"
+            missing="${missing}secrets.LF_RELENG_BOT_PRIVATE_KEY"
+          fi
+          if [ -n "${missing}" ]; then
+            msg="The allow-list sweep needs the LF RelEng bot App"
+            msg="${msg} credentials: ${missing} is not set for the"
+            msg="${msg} 'production' environment"
+            echo "::error::${msg}" >&2
+            exit 1
+          fi
+
+      # Pull requests come from the organisation's bot so that a
+      # maintainer can review and merge them. An App token also lets the
+      # required checks run on the pull requests it opens, which the
+      # ephemeral GITHUB_TOKEN deliberately suppresses.
+      - name: 'Mint bot token'
+        id: 'token'
         # yamllint disable-line rule:line-length
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
-          repository: '${{ needs.discover.outputs.org }}/${{ matrix.repo }}'
-          ref: '${{ matrix.default_branch }}'
-          # The PAT reads the target repository; persist-credentials
-          # keeps it out of .git/config so no later step or artefact can
-          # pick it up. The push supplies its own credential separately.
-          persist-credentials: false
-          token: '${{ secrets.ALLOWLIST_BUMP_PAT }}'
+          client-id: '${{ vars.LF_RELENG_BOT_CLIENT_ID }}'
+          private-key: '${{ secrets.LF_RELENG_BOT_PRIVATE_KEY }}'
+          owner: '${{ needs.discover.outputs.org }}'
+          # Scoped to the repositories actually being swept, so the token
+          # cannot reach anything discovery ruled out of scope.
+          # yamllint disable-line rule:line-length
+          repositories: "${{ join(fromJson(needs.discover.outputs.matrix).*.repo, ',') }}"
+          # Narrow the installation's blanket permissions to what the
+          # sweep needs. 'workflows' is required in its own right: every
+          # file this rewrites lives under .github/workflows. Nothing
+          # here needs read access to anything else, because the linter
+          # does its lookups with the ephemeral token instead.
+          permission-contents: 'write'
+          permission-pull-requests: 'write'
+          permission-workflows: 'write'
+
+      - name: 'Resolve bot identity'
+        id: 'identity'
+        shell: bash
+        env:
+          # A public user lookup, so the ephemeral token serves. Keeping
+          # the bot's token to the step that writes leaves one place
+          # where it is used and one place to reason about.
+          GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+          SLUG: '${{ steps.token.outputs.app-slug }}'
+        run: |
+          # Resolve bot identity
+          # A DCO sign-off is mandatory across the organisation and must
+          # name the commit author. Commits made through the API are
+          # authored by the App's bot user, whose address derives from
+          # its numeric id, so look that up rather than carrying a magic
+          # number that would rot silently if the App were replaced.
+          set -euo pipefail
+          login="${SLUG}[bot]"
+          id="$(gh api "/users/${login}" --jq '.id')"
+          author="${login} <${id}+${login}@users.noreply.github.com>"
+          echo "Commits will be authored by ${author}"
+          echo "author=${author}" >> "$GITHUB_OUTPUT"
+
+      - name: 'Clone repositories under sweep'
+        shell: bash
+        env:
+          ORG: '${{ needs.discover.outputs.org }}'
+          MATRIX: '${{ needs.discover.outputs.matrix }}'
+          SERVER: '${{ github.server_url }}'
+        run: |
+          # Clone repositories under sweep
+          set -euo pipefail
+
+          # Anonymous clones. Everything in scope is public
+          # (.github/scan-scope.json sets scan_private false), so no
+          # credential lands in any checkout's .git/config and nothing
+          # later in the job can lift one from there. The bot token is
+          # used only for the API calls that write.
+          mkdir -p repos
+          while IFS=$'\t' read -r repo branch; do
+            [ -z "${repo}" ] && continue
+            echo "Cloning ${ORG}/${repo} (${branch})"
+            git clone --quiet --depth 1 --branch "${branch}" \
+              "${SERVER}/${ORG}/${repo}.git" "repos/${repo}"
+          done < <(printf '%s' "${MATRIX}" \
+            | jq -r '.[] | [.repo, .default_branch] | @tsv')
 
       - name: 'Install uv'
         # yamllint disable-line rule:line-length
@@ -153,148 +271,453 @@ jobs:
           enable-cache: true
 
       - name: 'Update allow-list pins'
-        id: 'bump'
         shell: bash
         env:
-          GITHUB_TOKEN: '${{ secrets.ALLOWLIST_BUMP_PAT }}'
+          # The ephemeral token, not the bot's. These lookups read public
+          # release data right across GitHub -- the allow-list host, and
+          # every organisation whose actions the workflows call -- and
+          # almost none of that lies within the bot App's repository
+          # selection, which is deliberately confined to the
+          # repositories being written to. This token reads public data
+          # without qualification. Its budget is ample: a cold-cache
+          # sweep of the whole family measured 2 REST calls and 174
+          # GraphQL points against a limit of 1000 per hour for each.
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
           ORG: '${{ needs.discover.outputs.org }}'
-          REPO: '${{ matrix.repo }}'
           LINTER_VERSION: '${{ env.LINTER_VERSION }}'
+          EXPECTED: '${{ needs.discover.outputs.count }}'
         run: |
           # Update allow-list pins
           set -euo pipefail
 
+          # One invocation across every checkout, rather than a job per
+          # repository. See the note at the top of this file for what
+          # that does and does not save.
+          #
           # --no-auto-fix keeps the diff to allow-list pins alone: action
           # version bumps are Dependabot's job, and mixing them makes the
           # pull request harder to review and harder to revert.
           #
-          # The linter exits 1 when it modifies files, which is the signal
-          # we want rather than an error, so the status is captured.
-          report="$(mktemp)"
+          # The linter exits 1 when it modifies files, which is the
+          # signal we want rather than an error, so the status is
+          # captured.
           status=0
           uvx --from "gha-workflow-linter==${LINTER_VERSION}" \
-            gha-workflow-linter lint . \
+            gha-workflow-linter lint repos \
+            --multi-repo \
             --update-allow-list \
             --no-auto-fix \
             --allow-list-org "${ORG}" \
-            --format json > "${report}" || status=$?
+            --format json > report.json || status=$?
+          echo "Linter exited ${status}"
 
-          # Any status other than 0 (clean) or 1 (files changed) means the
-          # run itself failed; surface it rather than reporting "no work".
-          if [ "${status}" -gt 1 ]; then
-            echo "::error::linter failed for ${REPO} (exit ${status})" >&2
-            cat "${report}" >&2 || true
-            exit "${status}"
+          # The exit code cannot gate this step. --update-allow-list
+          # makes an unresolved host exit 4, and the sweep's aggregate
+          # code is the highest across every repository, so one host
+          # that would not resolve would discard the fixes made for all
+          # the others before any pull request was raised. The report is
+          # the contract instead: insist it is well formed, act on what
+          # succeeded, and fail once the rest is open. A run that died
+          # outright writes no parseable document, which the check below
+          # catches.
+
+          # Insist the report accounts for everything discovery found.
+          # A rate-limited pre-flight can end the run before any document
+          # is written (gha-workflow-linter#324), and a truncated or
+          # absent report would otherwise read as "every repository is
+          # already current" -- the silent all-clear this sweep exists to
+          # prevent.
+          if ! jq -e 'type == "object"' report.json > /dev/null 2>&1; then
+            echo '::error::the linter produced no parseable report' >&2
+            exit 1
+          fi
+          seen="$(jq -r '.repositories | length' report.json)"
+          if [ "${seen}" != "${EXPECTED}" ]; then
+            msg="report covers ${seen} of ${EXPECTED} repositories;"
+            msg="${msg} refusing to read a partial sweep as complete"
+            echo "::error::${msg}" >&2
+            exit 1
+          fi
+          limited="$(jq -r '.summary.rate_limited // false' report.json)"
+          if [ "${limited}" = 'true' ]; then
+            msg="the GitHub API was rate-limited, so no pin was actually"
+            msg="${msg} checked; the state of the estate is unknown"
+            echo "::error::${msg}" >&2
+            exit 1
           fi
 
-          fixed="$(jq -r '.allow_list.summary.fixed // 0' "${report}")"
+          # A repository that failed, or whose allow-list host would not
+          # resolve, does not stop the sweep: the rest is still worth
+          # raising. Both are reported here, and the job fails once the
+          # pull requests are open.
+          jq -r '.repositories[] | select(.error != null)
+                 | "::error::\(.repository): \(.error)"' report.json
+          jq -r '.repositories[]
+                 | select(((.results.allow_list.unresolved // {})
+                           | length) > 0)
+                 | "::error::\(.repository): allow-list host(s) did not"
+                   + " resolve: "
+                   + ((.results.allow_list.unresolved | keys)
+                      | join(", "))' report.json
 
-          # Read the host and its version as one pair. Taking them from
-          # separate traversals lets a multi-host report pair one host's
-          # name with another's version, so the branch and title would
-          # disagree with the commit message.
-          pair="$(jq -r '
-            .allow_list.hosts | to_entries | .[0] // empty
-            | "\(.key)\t\(.value.latest_version)"
-          ' "${report}")"
-          host="${pair%%$'\t'*}"
-          version="${pair#*$'\t'}"
-          [ "${pair}" = '' ] && { host=''; version=''; }
-
-          # More than one host is unusual: every pin in a repository
-          # normally names the same .github. Say so rather than letting
-          # the pull request silently describe one of them.
-          hosts="$(jq -r '.allow_list.hosts | length' "${report}")"
-          if [ "${hosts}" -gt 1 ]; then
-            echo "::warning::${REPO} resolved ${hosts} allow-list hosts;" \
-              "the pull request describes ${host} (${version})"
-          fi
-
-          echo "Rewrote ${fixed} allow-list pin(s) in ${REPO}"
-          {
-            echo "fixed=${fixed}"
-            echo "version=${version}"
-            echo "host=${host}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: 'Open pull request'
-        id: 'pr'
-        if: steps.bump.outputs.fixed != '0' && !inputs.dry-run
+      - name: 'Raise pull requests'
+        id: 'sweep'
         shell: bash
         env:
-          GH_TOKEN: '${{ secrets.ALLOWLIST_BUMP_PAT }}'
+          GH_TOKEN: '${{ steps.token.outputs.token }}'
           ORG: '${{ needs.discover.outputs.org }}'
-          REPO: '${{ matrix.repo }}'
-          BASE: '${{ matrix.default_branch }}'
-          VERSION: '${{ steps.bump.outputs.version }}'
-          HOST: '${{ steps.bump.outputs.host }}'
-          FIXED: '${{ steps.bump.outputs.fixed }}'
-          PREFIX: '${{ env.BRANCH_PREFIX }}'
-          AUTHOR_NAME: '${{ vars.ALLOW_LIST_BUMP_NAME }}'
-          AUTHOR_EMAIL: '${{ vars.ALLOW_LIST_BUMP_EMAIL }}'
+          BRANCH: '${{ env.BRANCH }}'
+          AUTHOR: '${{ steps.identity.outputs.author }}'
+          DRY_RUN: '${{ inputs.dry-run }}'
           SERVER: '${{ github.server_url }}'
           WORKFLOW_REPO: '${{ github.repository }}'
           RUN_ID: '${{ github.run_id }}'
         run: |
-          # Open pull request
+          # Raise pull requests
           set -euo pipefail
 
-          # Branch is keyed on the target version, so a re-run updates the
-          # open pull request rather than opening a second one.
-          branch="${PREFIX}-${VERSION}"
           run_url="${SERVER}/${WORKFLOW_REPO}/actions/runs/${RUN_ID}"
           workflow_url="${SERVER}/${WORKFLOW_REPO}/blob/main"
           workflow_url="${workflow_url}/.github/workflows/allow-list-bump.yaml"
 
-          git config user.name "${AUTHOR_NAME}"
-          git config user.email "${AUTHOR_EMAIL}"
-          git checkout -b "${branch}"
-          git add -A
+          # Commits are created, never pushed: GitHub signs what it
+          # creates, and the default branch of every repository in scope
+          # requires verified signatures, so a locally made commit would
+          # produce a pull request nobody could merge.
+          #
+          # shellcheck disable=SC2016  # $input is GraphQL, not shell
+          mutation='mutation($input: CreateCommitOnBranchInput!) {
+            createCommitOnBranch(input: $input) { commit { oid } }
+          }'
 
-          # A DCO sign-off is mandatory across the organisation, and the
-          # capitalised Conventional Commit type is what the semantic
-          # pull request check expects.
-          git commit -q -F - <<COMMIT
-          Chore: bump harden-runner allow-list to ${VERSION}
+          # Where each commit is built before the proposal branch points
+          # at it. See the rewrite below for why the detour exists.
+          staging="${BRANCH}-staging"
 
+          digest='[]'
+          raised=0
+          retired=0
+          current=0
+          blocked=0
+          deferred=0
+
+          # Appends one repository's outcome to the digest the Slack job
+          # renders. A function so the paths that finish early record
+          # themselves without repeating it. The loop below runs in this
+          # shell, not a subshell, so the assignment sticks.
+          record() {
+            digest="$(printf '%s' "${digest}" | jq -c \
+              --arg repo "$1" --arg version "$2" --arg url "$3" \
+              --arg status "$4" --argjson fixed "$5" \
+              '. + [{repo: $repo, version: $version, url: $url,
+                     status: $status, fixed: $fixed}]')"
+          }
+
+          # Points a ref at a commit whether or not it already exists.
+          set_ref() {
+            if gh api "repos/$1/git/ref/heads/$2" > /dev/null 2>&1; then
+              gh api -X PATCH "repos/$1/git/refs/heads/$2" \
+                -f "sha=$3" -F 'force=true' > /dev/null
+            else
+              gh api -X POST "repos/$1/git/refs" \
+                -f "ref=refs/heads/$2" -f "sha=$3" > /dev/null
+            fi
+          }
+
+          # A description with the run identifier folded out, for
+          # comparing what the proposal says against what it should say.
+          # Every sweep links the run that last touched the proposal, so
+          # comparing literally would differ every week and rewrite the
+          # description for nothing. Everything else in it -- the target
+          # version, the pin count, the note about pins needing hand
+          # attention -- is a fact a reviewer acts on, and a change to
+          # any of them has to reach them. Carriage returns go too,
+          # since the comparison is against text that has been to
+          # GitHub and back.
+          fold_run() {
+            printf '%s' "$1" | tr -d '\r' \
+              | sed 's#/actions/runs/[0-9][0-9]*#/actions/runs/#'
+          }
+
+          # Every repository the run could actually judge. A repository
+          # whose allow-list host would not resolve is deliberately not
+          # among them: with the host unknown the report shows no fixes,
+          # which is indistinguishable from a repository that needs
+          # none, and the retirement below would then close a perfectly
+          # good proposal because the linter could not look. Those
+          # repositories are reported as errors above and fail the job
+          # further down, having had nothing done to them.
+          #
+          # 'unresolved' is the right test for that, and 'checked' is
+          # not: the linter reports checked false both when the check is
+          # disabled and when a repository simply has no pins left, so
+          # filtering on it would strand an obsolete proposal in the one
+          # repository whose last pin someone had removed. The sweep
+          # always enables the check, so the first of those cannot
+          # arise. An unknown workflow organisation, which is the case
+          # where nothing could be scanned at all, reports itself
+          # through 'unresolved' and is excluded on that.
+          #
+          # A null 'results' is admitted rather than filtered out. The
+          # linter short-circuits with no payload when a repository has
+          # no action calls to validate, and calls that a clean result
+          # rather than a failure -- every other short-circuit carries a
+          # reason in 'error'. A repository that has removed its last
+          # workflow has no pins either, so it belongs in the
+          # retirement path below, not silently outside the sweep.
+          #
+          # Fields are separated by US (0x1f) rather than a tab. Tab is
+          # IFS whitespace, so bash collapses a run of them and an empty
+          # field simply vanishes, shifting every field after it -- a
+          # repository with no pins left reports an empty version and
+          # host, and would arrive here with its counts in the wrong
+          # variables.
+          while IFS=$'\x1f' read -r repo fixed outstanding hosts_count \
+              version host pairs; do
+            [ -z "${repo}" ] && continue
+            dir="repos/${repo}"
+            target="$(git -C "${dir}" rev-parse --abbrev-ref HEAD)"
+            url=''
+
+            # Almost always one host: every pin in a repository normally
+            # names the same '.github'. More than one resolves to more
+            # than one release, and naming a single version in the title
+            # would then describe part of the change as though it were
+            # all of it, so say it differently and say so in the run.
+            # None at all is the ordinary shape of a repository with
+            # nothing to pin, and warns about nothing.
+            if [ "${hosts_count}" = '1' ]; then
+              title="Chore: Bump harden-runner allow-list to ${version}"
+              display="${version}"
+              commit_origin="${host}"
+              body_target="to **${version}** of \`${host}\`, the newest"
+              body_target="${body_target} release eligible under this"
+              body_target="${body_target} repository's Dependabot cooldown"
+            else
+              title='Chore: Bump harden-runner allow-list pins'
+              display=''
+              commit_origin='the allow-list hosts it names'
+              body_target='to the newest release of each host it names'
+              if [ "${hosts_count}" -gt 1 ]; then
+                display="${hosts_count} hosts"
+                commit_origin="${commit_origin} (${pairs})"
+                body_target="${body_target} that is eligible under this"
+                body_target="${body_target} repository's Dependabot"
+                body_target="${body_target} cooldown: ${pairs}"
+                echo "::warning::${repo} pins ${hosts_count} allow-list" \
+                  "hosts (${pairs}); the pull request describes them all"
+              fi
+            fi
+
+            # Qualify the head with the organisation. 'gh pr list
+            # --head' matches on branch name alone, so a pull request
+            # from a fork that happened to use this branch name would
+            # be selected, and the code below would then retitle a
+            # contributor's proposal while amending an internal branch.
+            existing="$(gh api \
+              "repos/${ORG}/${repo}/pulls?state=open&head=${ORG}:${BRANCH}" \
+              --jq '.[0] // empty')"
+            existing_url="$(printf '%s' "${existing}" \
+              | jq -r '.html_url // ""')"
+            existing_title="$(printf '%s' "${existing}" \
+              | jq -r '.title // ""')"
+            existing_body="$(printf '%s' "${existing}" \
+              | jq -r '.body // ""')"
+            existing_number="$(printf '%s' "${existing}" \
+              | jq -r '.number // ""')"
+
+            # Stale pins the linter could see but could not rewrite --
+            # a pin inside a multi-line scalar, for instance. The
+            # repository is not current, so nothing here may treat it
+            # as such, but this sweep has no change to offer for them
+            # either. Say so and leave every proposal alone.
+            if [ "${fixed}" = '0' ] && [ "${outstanding}" != '0' ]; then
+              msg="${repo}: ${outstanding} stale allow-list pin(s) could"
+              msg="${msg} not be rewritten automatically and need"
+              msg="${msg} attention by hand"
+              echo "::warning::${msg}"
+              blocked=$((blocked + 1))
+              record "${ORG}/${repo}" "${display}" "${existing_url}" \
+                'blocked' "${fixed}"
+              continue
+            fi
+
+            # Nothing left to propose, and nothing left outstanding.
+            # Either the default branch is already current -- by this
+            # sweep's hand or another's -- or its pins sit ahead of the
+            # release the linter resolved. An open proposal is then a
+            # no-op that would sit in the review queue indefinitely, so
+            # retire it. Repositories are visited whether or not this
+            # run found anything to fix, precisely so that this can
+            # happen.
+            if [ "${fixed}" = '0' ]; then
+              status='current'
+              if [ -z "${existing_url}" ]; then
+                # Nothing open, so nothing to lose. A default branch
+                # that moved since the checkout might have gone stale
+                # again, but next week's run will say so and nothing
+                # here has acted on the older reading.
+                current=$((current + 1))
+              elif [ "$(gh api \
+                  "repos/${ORG}/${repo}/git/ref/heads/${target}" \
+                  --jq '.object.sha')" \
+                != "$(git -C "${dir}" rev-parse HEAD)" ]; then
+                # Retiring rests entirely on the checkout showing
+                # nothing to do, and closing a proposal cannot be
+                # undone by the next run. If the default branch moved
+                # since, that reading may no longer hold -- a pin added
+                # in the meantime leaves the repository stale again --
+                # and this would close the only proposal it has. With
+                # no rewritten paths there is nothing narrower to
+                # compare than the branch itself, so any movement is
+                # reason enough to wait.
+                msg="${repo}: ${target} moved while the sweep was"
+                msg="${msg} running; leaving its proposal for the next"
+                msg="${msg} run rather than retiring it on a stale"
+                msg="${msg} reading"
+                echo "::warning::${msg}"
+                deferred=$((deferred + 1))
+                status='deferred'
+                url="${existing_url}"
+              elif [ "${DRY_RUN}" = 'true' ]; then
+                url="${existing_url}"
+                status='dry-run'
+                echo "${repo}: would retire ${url}"
+              else
+                url="${existing_url}"
+                comment='Retiring this proposal: the allow-list pins on'
+                comment="${comment} the default branch already sit at or"
+                comment="${comment} ahead of the release this sweep would"
+                comment="${comment} select, so it no longer changes"
+                comment="${comment} anything. Retired by the weekly"
+                comment="${comment} allow-list sweep."
+                gh pr close "${url}" --delete-branch \
+                  --comment "${comment}" > /dev/null
+                status='retired'
+                retired=$((retired + 1))
+                echo "${repo}: retired ${url}"
+              fi
+              record "${ORG}/${repo}" "${display}" "${url}" \
+                "${status}" "${fixed}"
+              continue
+            fi
+
+            changed="$(git -C "${dir}" diff --name-only | sort)"
+
+            # The checkout predates the toolchain install and the linter
+            # run, so the default branch may have moved since. Where it
+            # now stands is what any commit must build on, or the
+            # proposal lands on a stale merge base -- the very thing
+            # staging exists to avoid.
+            #
+            # Moving under a file this sweep rewrites is a different
+            # matter, and has to be settled before anything else is
+            # decided. The working tree no longer describes that file's
+            # base, so the proposal on the branch would revert whatever
+            # landed -- and it would do so just as silently by being
+            # judged settled and left alone as by being rewritten.
+            # Nothing else about the movement matters, because the
+            # commit carries these paths and no others. Leave such a
+            # repository for the next run, whose checkout will include
+            # the change.
+            git -C "${dir}" fetch --quiet --depth 1 origin "${target}"
+            base="$(git -C "${dir}" rev-parse FETCH_HEAD)"
+            drifted=''
+            while IFS= read -r file; do
+              [ -z "${file}" ] && continue
+              was="$(git -C "${dir}" rev-parse --verify --quiet \
+                "HEAD:${file}" || true)"
+              now="$(git -C "${dir}" rev-parse --verify --quiet \
+                "FETCH_HEAD:${file}" || true)"
+              if [ "${was}" != "${now}" ]; then
+                drifted="${file}"
+                break
+              fi
+            done < <(printf '%s\n' "${changed}")
+
+            if [ -n "${drifted}" ]; then
+              msg="${repo}: ${target} changed ${drifted} while the sweep"
+              msg="${msg} was running; leaving it for the next run rather"
+              msg="${msg} than proposing a stale copy"
+              echo "::warning::${msg}"
+              deferred=$((deferred + 1))
+              record "${ORG}/${repo}" "${display}" "${existing_url}" \
+                'deferred' "${fixed}"
+              continue
+            fi
+
+            # Whether the open proposal already offers exactly this
+            # change, judged on the files it touches and their contents.
+            # Both halves matter: equal contents over a smaller file set
+            # would miss a pin that appeared on the default branch since
+            # the proposal opened, and an equal file set with different
+            # contents would miss a target that moved. The title is
+            # deliberately no part of it, since a hand-edited title
+            # would otherwise force a commit that changes no file and
+            # dismisses the proposal's reviews for nothing.
+            settled='false'
+            if [ -n "${existing_url}" ]; then
+              # An open pull request must be readable before the sweep
+              # decides anything about it. Swallowing a failure here
+              # would leave the code below rewriting a branch it could
+              # not first compare against.
+              git -C "${dir}" fetch --quiet --depth 1 origin "${BRANCH}"
+              proposed="$(gh api --paginate \
+                "repos/${ORG}/${repo}/pulls/${existing_number}/files" \
+                --jq '.[].filename' | sort)"
+              if [ "${proposed}" = "${changed}" ]; then
+                settled='true'
+                while IFS= read -r file; do
+                  [ -z "${file}" ] && continue
+                  want="$(git -C "${dir}" hash-object "${file}")"
+                  # --verify --quiet, because plain rev-parse echoes its
+                  # argument back on stdout when it cannot resolve it,
+                  # which would read as a hash and never compare equal.
+                  have="$(git -C "${dir}" rev-parse --verify --quiet \
+                    "FETCH_HEAD:${file}" || true)"
+                  if [ "${want}" != "${have}" ]; then
+                    settled='false'
+                    break
+                  fi
+                done < <(printf '%s\n' "${changed}")
+              fi
+            fi
+
+            note=''
+            if [ "${outstanding}" != '0' ]; then
+              # Leads with its own space so the sentence above closes
+              # without a trailing one when there is nothing to add:
+              # a description that differs from the generated text only
+              # by invisible whitespace would be rewritten every week.
+              note=" A further \`${outstanding}\` stale pin(s) could not"
+              note="${note} be rewritten automatically and still need"
+              note="${note} attention by hand."
+            fi
+
+            message="$(cat <<COMMIT
           The harden-runner allow-list pins in this repository lagged
-          behind ${HOST}. Dependabot cannot see these references, because
-          they are values of 'config:' and 'default:' keys rather than
-          'uses:' references, so they drift until something bumps them.
+          behind ${commit_origin}. Dependabot cannot see these
+          references, because they are values of 'config:' and
+          'default:' keys rather than 'uses:' references, so they drift
+          until something bumps them.
 
           A stale pin means a block-mode job lacks newly allow-listed
-          endpoints, producing confusing ECONNREFUSED failures long after
-          the allow-list itself was corrected.
+          endpoints, producing confusing ECONNREFUSED failures long
+          after the allow-list itself was corrected.
 
           Raised automatically by the weekly allow-list sweep.
 
-          Signed-off-by: ${AUTHOR_NAME} <${AUTHOR_EMAIL}>
+          Signed-off-by: ${AUTHOR}
           COMMIT
+          )"
 
-          # Supply the credential to this push alone rather than storing
-          # it in the checkout. GitHub masks the secret in logs; the URL
-          # is never echoed regardless.
-          push_url="https://x-access-token:${GH_TOKEN}@github.com"
-          push_url="${push_url}/${ORG}/${REPO}.git"
-          git push --force "${push_url}" "${branch}" > /dev/null 2>&1
-
-          # An existing pull request for this branch is already updated by
-          # the push above, so only create one when none is open.
-          existing="$(gh pr list --repo "${ORG}/${REPO}" \
-            --head "${branch}" --state open --json url --jq '.[0].url // ""')"
-          if [ -n "${existing}" ]; then
-            echo "Updated existing pull request: ${existing}"
-            echo "url=${existing}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          body="$(cat <<BODY
+            body="$(cat <<BODY
           ## Summary
 
-          Bumps the \`step-security/harden-runner\` egress allow-list pins
-          to **${VERSION}**, the current release of \`${HOST}\`.
+          Bumps the \`step-security/harden-runner\` egress allow-list
+          pins ${body_target}.
 
-          \`${FIXED}\` pin(s) were rewritten.
+          \`${fixed}\` pin(s) were rewritten.${note}
 
           ## Why this is not a Dependabot update
 
@@ -313,7 +736,8 @@ jobs:
           style, spacing and any suppression directive are preserved, so
           the diff should be limited to the pins themselves.
 
-          Pins carrying an \`allow-list-pin-ok\` directive were left alone.
+          Pins carrying an \`allow-list-pin-ok\` directive were left
+          alone.
 
           ---
 
@@ -322,44 +746,168 @@ jobs:
           BODY
           )"
 
-          url="$(gh pr create --repo "${ORG}/${REPO}" \
-            --base "${BASE}" --head "${branch}" \
-            --title "Chore: bump harden-runner allow-list to ${VERSION}" \
-            --body "${body}")"
-          echo "Opened pull request: ${url}"
-          echo "url=${url}" >> "$GITHUB_OUTPUT"
+            if [ "${settled}" = 'true' ]; then
+              # The open pull request already carries this change.
+              # Rewriting the branch would push an identical diff under
+              # a fresh commit every Monday, and the base branch rules
+              # dismiss stale reviews on push, so an unreviewed proposal
+              # would reset its own review state weekly and never
+              # accumulate an approval.
+              echo "${repo}: ${display} already proposed"
+              url="${existing_url}"
+              status='open'
+              # The description can go stale while the branch does not:
+              # a pin that appeared and could not be rewritten changes
+              # what the reviewer needs to know without changing a
+              # single file the sweep writes. Compare both halves.
+              if [ "${DRY_RUN}" != 'true' ] \
+                 && { [ "${existing_title}" != "${title}" ] \
+                      || [ "$(fold_run "${existing_body}")" \
+                           != "$(fold_run "${body}")" ]; }; then
+                gh pr edit "${url}" \
+                  --title "${title}" --body "${body}" > /dev/null
+                echo "${repo}: refreshed the description"
+                status='described'
+              fi
+            elif [ "${DRY_RUN}" = 'true' ]; then
+              echo "${repo}: would propose ${display} (${fixed} pin(s))"
+              status='dry-run'
+            else
+              # base and target were resolved above, before the drift
+              # check, so this builds on the default branch as it now
+              # stands rather than as the checkout found it.
 
-      - name: 'Record outcome'
-        if: always() && steps.bump.outputs.fixed != '0'
-        shell: bash
-        env:
-          REPO: '${{ matrix.repo }}'
-          ORG: '${{ needs.discover.outputs.org }}'
-          VERSION: '${{ steps.bump.outputs.version }}'
-          FIXED: '${{ steps.bump.outputs.fixed }}'
-          PR_URL: '${{ steps.pr.outputs.url }}'
-        run: |
-          # Record outcome
-          # Matrix jobs cannot share outputs, so each writes a fragment
-          # that the digest job collects from the uploaded artefacts.
-          set -euo pipefail
-          mkdir -p outcome
-          jq -n \
-            --arg repo "${ORG}/${REPO}" \
-            --arg version "${VERSION}" \
-            --arg url "${PR_URL}" \
-            --argjson fixed "${FIXED}" \
-            '{repo: $repo, version: $version, url: $url, fixed: $fixed}' \
-            > "outcome/${REPO}.json"
+              # Build the commit on a staging ref rather than on the
+              # proposal branch, then move the branch onto it. Two
+              # constraints meet here and neither can be given up.
+              #
+              # The commit has to sit directly on the current default
+              # branch: committing on top of the existing proposal would
+              # keep its stale merge base, so a workflow added to the
+              # default branch since would land as an add/add conflict,
+              # and an unrelated edit to a file the proposal already
+              # touches would be copied wholesale into the diff under
+              # review.
+              #
+              # But the branch must never point at the default branch,
+              # even for an instant: GitHub closes a pull request the
+              # moment head and base coincide, taking its number, review
+              # threads and approvals with it. Staging satisfies both --
+              # the proposal branch moves straight from its old commit
+              # to the new one, and is equal to the base at no point.
+              additions="$(printf '%s\n' "${changed}" \
+                | while IFS= read -r file; do
+                    [ -z "${file}" ] && continue
+                    jq -n --arg path "${file}" \
+                      --arg contents "$(base64 -w0 < "${dir}/${file}")" \
+                      '{path: $path, contents: $contents}'
+                  done | jq -s -c '.')"
 
-      - name: 'Upload outcome'
-        if: always() && steps.bump.outputs.fixed != '0'
-        # yamllint disable-line rule:line-length
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: 'allow-list-outcome-${{ matrix.repo }}'
-          path: 'outcome/'
-          retention-days: 7
+              set_ref "${ORG}/${repo}" "${staging}" "${base}"
+              commit="$(jq -n \
+                --arg query "${mutation}" \
+                --arg slug "${ORG}/${repo}" \
+                --arg branch "${staging}" \
+                --arg oid "${base}" \
+                --arg headline "${title}" \
+                --arg body "${message}" \
+                --argjson additions "${additions}" \
+                '{query: $query, variables: {input: {
+                   branch: {repositoryNameWithOwner: $slug,
+                            branchName: $branch},
+                   expectedHeadOid: $oid,
+                   message: {headline: $headline, body: $body},
+                   fileChanges: {additions: $additions}}}}' \
+                | gh api graphql --input - \
+                --jq '.data.createCommitOnBranch.commit.oid')"
+              # The tip was read before the linter comparison and the
+              # staging commit, so a handful of API calls have passed.
+              # Confirm it has not moved before pointing the proposal at
+              # a commit built on it, and take the staging ref away
+              # again if it has. The window is now a single call rather
+              # than the whole sweep, which is as tight as it gets
+              # without a compare-and-swap the API does not offer.
+              if [ "$(gh api \
+                  "repos/${ORG}/${repo}/git/ref/heads/${target}" \
+                  --jq '.object.sha')" != "${base}" ]; then
+                gh api -X DELETE \
+                  "repos/${ORG}/${repo}/git/refs/heads/${staging}" \
+                  > /dev/null
+                msg="${repo}: ${target} moved while the commit was being"
+                msg="${msg} built; leaving the proposal for the next run"
+                echo "::warning::${msg}"
+                deferred=$((deferred + 1))
+                record "${ORG}/${repo}" "${display}" "${existing_url}" \
+                  'deferred' "${fixed}"
+                continue
+              fi
+
+              set_ref "${ORG}/${repo}" "${BRANCH}" "${commit}"
+              gh api -X DELETE \
+                "repos/${ORG}/${repo}/git/refs/heads/${staging}" \
+                > /dev/null
+
+              if [ -n "${existing_url}" ]; then
+                gh pr edit "${existing_url}" \
+                  --title "${title}" --body "${body}" > /dev/null
+                url="${existing_url}"
+                status='updated'
+                echo "${repo}: updated ${url} to ${display}"
+              else
+                url="$(gh pr create --repo "${ORG}/${repo}" \
+                  --base "${target}" --head "${BRANCH}" \
+                  --title "${title}" --body "${body}")"
+                status='raised'
+                echo "${repo}: opened ${url}"
+              fi
+              raised=$((raised + 1))
+            fi
+
+            record "${ORG}/${repo}" "${display}" "${url}" \
+              "${status}" "${fixed}"
+          done < <(jq -r '
+            .repositories[]
+            | select(.error == null)
+            | select((((.results.allow_list.unresolved // {})
+                       | length) == 0))
+            | . as $repo
+            | (($repo.results.allow_list.hosts // {}) | to_entries)
+              as $hosts
+            | [$repo.repository,
+               ($repo.results.allow_list.summary.fixed // 0),
+               ([($repo.results.allow_list.findings // [])[]
+                 | select((.suppressed // false) == false)
+                 | select((.fixed // false) == false)] | length),
+               ($hosts | length),
+               ($hosts[0].value.latest_version // ""),
+               ($hosts[0].key // ""),
+               ([$hosts[] | "\(.key) -> \(.value.latest_version)"]
+                | join(", "))]
+            | map(tostring) | join("\u001f")' report.json)
+
+          echo "${current} repository/repositories already current;" \
+            "${raised} proposed; ${retired} retired;" \
+            "${blocked} needing manual attention;" \
+            "${deferred} deferred"
+
+          {
+            echo "raised=${raised}"
+            echo "digest=${digest}"
+          } >> "$GITHUB_OUTPUT"
+
+          # Written before the failure check below, so the digest
+          # survives a sweep that raised what it could and still has a
+          # broken repository to report.
+          failed="$(jq -r '[.repositories[]
+            | select((.error != null)
+              or (((.results.allow_list.unresolved // {}) | length) > 0))]
+            | length' report.json)"
+          if [ "${failed}" != '0' ]; then
+            msg="${failed} repository/repositories failed or left an"
+            msg="${msg} allow-list host unresolved; see the errors above"
+            echo "::error::${msg}" >&2
+            exit 1
+          fi
 
   notify:
     name: 'Notify Slack'
@@ -391,15 +939,6 @@ jobs:
           allowed-endpoints: >
             ${{ env.CONNECTION_ALLOW_LIST }}
 
-      - name: 'Collect outcomes'
-        id: 'collect'
-        # yamllint disable-line rule:line-length
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          pattern: 'allow-list-outcome-*'
-          path: 'outcomes'
-          merge-multiple: true
-
       - name: 'Build digest'
         id: 'digest'
         shell: bash
@@ -409,44 +948,96 @@ jobs:
           RUN_ID: '${{ github.run_id }}'
           TOTAL: '${{ needs.discover.outputs.count }}'
           BUMP_RESULT: '${{ needs.bump.result }}'
+          DIGEST: '${{ needs.bump.outputs.digest }}'
         run: |
           # Build digest
           set -euo pipefail
           RUN_URL="${SERVER}/${REPO_SLUG}/actions/runs/${RUN_ID}"
 
-          # A quiet week is quiet: no pull requests and no failures means
-          # nothing worth interrupting anyone for.
-          raised=0
-          lines=''
-          if compgen -G 'outcomes/*.json' > /dev/null; then
-            while IFS= read -r entry; do
-              repo="$(printf '%s' "${entry}" | jq -r '.repo')"
-              version="$(printf '%s' "${entry}" | jq -r '.version')"
-              url="$(printf '%s' "${entry}" | jq -r '.url')"
-              fixed="$(printf '%s' "${entry}" | jq -r '.fixed')"
-              if [ -n "${url}" ] && [ "${url}" != 'null' ]; then
-                lines="${lines}• <${url}|${repo}> → ${version}"
-                lines="${lines} (${fixed} pin(s))\\n"
-                raised=$((raised + 1))
-              fi
-            done < <(jq -c '.' outcomes/*.json)
+          # A sweep that died early leaves no digest behind, so treat an
+          # absent or malformed one as empty rather than letting jq
+          # abort: the failure itself is still worth announcing.
+          entries="${DIGEST:-[]}"
+          if ! jq -e 'type == "array"' <<< "${entries}" > /dev/null 2>&1
+          then
+            entries='[]'
           fi
+
+          opened=0
+          retired=0
+          blocked=0
+          deferred=0
+          lines=''
+          while IFS=$'\x1f' read -r repo version url status fixed; do
+            if [ "${status}" = 'blocked' ] \
+               || [ "${status}" = 'deferred' ]; then
+              # Neither has a change to show, and both may still carry
+              # an open proposal the sweep left alone. Count and link
+              # that proposal like any other, since it is genuinely
+              # open. Without one there is nothing to link, and naming
+              # the repository is the whole point -- nothing else would
+              # mention it.
+              if [ "${status}" = 'blocked' ]; then
+                blocked=$((blocked + 1))
+                why='stale pins need attention by hand'
+              else
+                deferred=$((deferred + 1))
+                why='deferred; the default branch moved mid-sweep'
+              fi
+              if [ -n "${url}" ]; then
+                lines="${lines}• <${url}|${repo}> — open; ${why}\\n"
+                opened=$((opened + 1))
+              else
+                lines="${lines}• ${repo} — ${why}\\n"
+              fi
+              continue
+            fi
+            if [ -z "${url}" ]; then
+              continue
+            fi
+            if [ "${status}" = 'retired' ]; then
+              lines="${lines}• <${url}|${repo}> — retired; the pins need"
+              lines="${lines} no change\\n"
+              retired=$((retired + 1))
+            else
+              lines="${lines}• <${url}|${repo}> → ${version}"
+              lines="${lines} (${fixed} pin(s))\\n"
+              opened=$((opened + 1))
+            fi
+          done < <(jq -r '.[]
+            | [.repo, .version, .url, .status, .fixed]
+            | map(tostring) | join("\u001f")' <<< "${entries}")
 
           failed='false'
           if [ "${BUMP_RESULT}" != 'success' ]; then
             failed='true'
           fi
 
-          if [ "${raised}" -eq 0 ] && [ "${failed}" = 'false' ]; then
-            echo 'No pull requests raised and no failures; staying quiet'
+          # A quiet week is quiet: nothing open, retired, blocked or
+          # deferred and no failures means nothing worth interrupting
+          # anyone for.
+          if [ "${opened}" -eq 0 ] && [ "${retired}" -eq 0 ] \
+             && [ "${blocked}" -eq 0 ] && [ "${deferred}" -eq 0 ] \
+             && [ "${failed}" = 'false' ]; then
+            echo 'Nothing to report; staying quiet'
             echo 'notify=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           noun='repositories'
           [ "${TOTAL}" = '1' ] && noun='repository'
-          summary="Raised *${raised}* pull request(s) across"
+          summary="*${opened}* open pull request(s) across"
           summary="${summary} ${TOTAL} ${noun}."
+          if [ "${retired}" -gt 0 ]; then
+            summary="${summary} ${retired} retired as no longer needed."
+          fi
+          if [ "${blocked}" -gt 0 ]; then
+            summary="${summary} ${blocked} could not be fixed"
+            summary="${summary} automatically."
+          fi
+          if [ "${deferred}" -gt 0 ]; then
+            summary="${summary} ${deferred} deferred to the next run."
+          fi
           if [ "${failed}" = 'true' ]; then
             summary="${summary} :warning: Some repositories failed;"
             summary="${summary} see the run for detail."
