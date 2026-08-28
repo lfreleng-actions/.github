@@ -61,7 +61,7 @@ jobs:
     # generic-workflows' docs/semantic-pull-request.md for the
     # reference.
     # yamllint disable-line rule:line-length
-    uses: lfreleng-actions/generic-workflows/.github/workflows/semantic-pull-request.yaml@a5f8494c776611226426aa3060ca9f8cfbfd6978  # v0.1.0
+    uses: lfreleng-actions/generic-workflows/.github/workflows/semantic-pull-request.yaml@41059e423606179bc80dedcdd1a50331d059788e  # v0.2.1
     permissions:
       contents: read
       pull-requests: read  # Gate step queries the PR API (avoids 403)
