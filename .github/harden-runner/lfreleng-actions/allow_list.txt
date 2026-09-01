@@ -431,6 +431,9 @@ lf-onap.atlassian.net:443
 # Jira Cloud (LF OpenDaylight tenant); LF project issue tracker.
 lf-opendaylight.atlassian.net:443
 
+# 1Password vault (LF Networking tenant); secret retrieval.
+lfnetworking.1password.com:443
+
 # 1Password vault (Linux Foundation tenant); secret retrieval.
 linuxfoundation.1password.com:443
 
