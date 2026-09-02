@@ -23,10 +23,6 @@ if TYPE_CHECKING:
 
     from .conftest import GitRepo, Outcome
 
-pytestmark = pytest.mark.xfail(
-    strict=True, reason="scripts/agents reference scripts not yet implemented"
-)
-
 SCRIPT = "gerrit-amend.sh"
 
 EXIT_OK = 0

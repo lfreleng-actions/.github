@@ -20,10 +20,6 @@ if TYPE_CHECKING:
 
     from .conftest import Outcome, Stub
 
-pytestmark = pytest.mark.xfail(
-    strict=True, reason="scripts/agents reference scripts not yet implemented"
-)
-
 SCRIPT = "resolve-review-thread.sh"
 
 EXIT_OK = 0

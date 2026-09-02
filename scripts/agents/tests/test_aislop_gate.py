@@ -21,10 +21,6 @@ if TYPE_CHECKING:
 
     from .conftest import GitRepo, Outcome, Stub
 
-pytestmark = pytest.mark.xfail(
-    strict=True, reason="scripts/agents reference scripts not yet implemented"
-)
-
 SCRIPT = "aislop-gate.sh"
 
 EXIT_CLEAN = 0
