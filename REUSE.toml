@@ -8,6 +8,7 @@ path = [
      "excluded-repos.json",
      ".github/scan-scope.json",
      "LICENSE",
+     "uv.lock",
      ".github/harden-runner/**",
      ".github/python-audit/**"
 ]
