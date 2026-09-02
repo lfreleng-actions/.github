@@ -89,6 +89,9 @@ organisation unless overridden at the repository level.
   attention are easy to spot. See
   [Organisation-wide aislop SARIF publisher](#organisation-wide-aislop-sarif-publisher)
   below for setup.
+- **[`agent-scripts.yaml`](.github/workflows/agent-scripts.yaml)** —
+  Runs the contract tests for the `AGENTS.md` reference scripts under
+  `scripts/agents/` on every pull request that touches them.
 
 ### Repository Exclusions
 
