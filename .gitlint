@@ -27,10 +27,44 @@
 # See http://jorisroovers.github.io/gitlint/user_defined_rules for details
 # extra-path=examples/
 
+# Opt in to 'search' regex semantics ahead of gitlint making them the
+# default, which also silences the deprecation warning.
+regex-style-search=true
+
 contrib=contrib-title-conventional-commits,contrib-body-requires-signed-off-by
+
+# T1 would otherwise fall back to gitlint's 72-character default, which
+# is looser than the 50-character limit AGENTS.md publishes.
+[title-max-length]
+line-length=50
+
+# CT1 validates the type and stops at the colon, so a lowercase
+# description passed. Require a capital there too. The rule deliberately
+# matches any capitalised word rather than repeating the type list. The
+# leading anchor is required because title-match-regex calls search(),
+# so an unanchored pattern would match anywhere and never fail; the
+# optional '!' keeps the breaking-change marker valid.
+[title-match-regex]
+regex=^[A-Z][a-zA-Z]*(\([^)]+\))?!?: [A-Z]
+
+# Body wrap limit from the same source, overriding the default of 80.
+# Over-long trailers are waived by [ignore-by-body] below.
+[body-max-line-length]
+line-length=72
 
 [contrib-title-conventional-commits]
 types=Fix,Feat,Chore,Docs,Style,Refactor,Perf,Test,Revert,CI,Build
+
+# A DCO trailer cannot be wrapped and contrib-body-requires-signed-off-by
+# makes one mandatory, so a long identity would leave an author unable to
+# satisfy both rules. This waives B1 for such a commit's body.
+# [ignore-body-lines] cannot serve here: it removes matching lines before
+# any rule runs, hiding the sign-off from the signed-off-by check. The
+# lookahead names the trailer and '.{73,}' requires the line to exceed the
+# limit, keeping the threshold exact for names of differing length.
+[ignore-by-body]
+regex=^(?=(Signed-off-by|Co-authored-by): ).{73,}
+ignore=B1
 
 # Disable linting on lines that have URLs on them
 [ignore-body-lines]
