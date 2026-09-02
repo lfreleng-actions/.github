@@ -29,6 +29,20 @@
 
 contrib=contrib-title-conventional-commits,contrib-body-requires-signed-off-by
 
+# T1 would otherwise fall back to gitlint's 72-character default, which
+# is looser than the 50-character limit AGENTS.md publishes.
+[title-max-length]
+line-length=50
+
+# body-max-line-length (B1) is deliberately left at its default. B1 also
+# measures trailer lines, and a Signed-off-by or Co-authored-by trailer
+# cannot be wrapped without invalidating it, so pinning B1 to 72 would
+# reject contributors whose name and address exceed the limit. Exempting
+# the trailer via ignore-body-lines is not a way out either: gitlint
+# applies that filter first, and CC1 then reports the sign-off missing.
+# The 72-character body limit is therefore manual policy; see AGENTS.md
+# section 6.1 (rule 6) and section 6.6.
+
 [contrib-title-conventional-commits]
 types=Fix,Feat,Chore,Docs,Style,Refactor,Perf,Test,Revert,CI,Build
 
