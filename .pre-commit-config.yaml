@@ -17,6 +17,11 @@ ci:
 
 exclude: "^docs/conf.py"
 
+# gitlint runs at the commit-msg stage. Without this, `prek install`
+# writes only the pre-commit shim and every commit-message rule goes
+# unchecked locally.
+default_install_hook_types: ["pre-commit", "commit-msg"]
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
@@ -65,13 +70,18 @@ repos:
     rev: 7ff8d35ae36a7d2b968f2f90b4c723e292e594ee  # frozen: v2.3.1
     hooks:
       - id: mypy
+        # The scripts/agents test suite imports pytest; without it the
+        # fixture decorators are untyped and strict mode rejects them.
+        additional_dependencies: ["pytest==9.1.1"]
 
   - repo: https://github.com/btford/write-good
     rev: ab66ce10136dfad5146e69e70f82a3efac8842c1 # frozen: v1.0.8
     hooks:
       - id: write-good
         files: "\\.(rst|md|markdown|mdown|mkdn)$"
-        exclude: "^profile/README\\.md$"
+        # AGENTS.md is normative prose: deliberate passive voice and
+        # modal keywords (MUST/only/never) trip write-good's heuristics
+        exclude: "^(profile/README|AGENTS)\\.md$"
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: a6564f5d57444e123433a5c9af733e3975c77229  # frozen: v0.11.0.1-1
@@ -107,6 +117,13 @@ repos:
     rev: 3c94d276aa3005fa1f5a977946c9dc106135c083  # frozen: 1.39.10
     hooks:
       - id: basedpyright
+        # The scripts/agents tests need pytest resolvable. Locally
+        # `uv sync` provides it through .venv (see pyproject.toml), but
+        # pre-commit.ci has no .venv, and adding pytest to this hook's
+        # environment breaches its 250 MiB tier cap (nodejs_wheel alone
+        # is ~200 MiB). The suite is type-checked instead by the
+        # basedpyright step in .github/workflows/agent-scripts.yaml.
+        exclude: "^scripts/agents/tests/"
 
   - repo: https://github.com/lfreleng-actions/gha-workflow-linter
     rev: cae470a1e8988c3cacbe9cc40a0d6b8e6881bde2  # frozen: v1.5.5

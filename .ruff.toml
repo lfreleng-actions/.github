@@ -44,3 +44,7 @@ notice-rgx = "SPDX-FileCopyrightText:\\s+\\d{4}"
 # CLI scripts whose stdout is the product: printing is the point, and a
 # flat scripts directory is not a package.
 ".github/scripts/*.py" = ["T201", "INP001"]
+# pytest suites: bare asserts are the idiom, the expected exit codes
+# and counts are the assertions, and the suite exists to drive git and
+# the scripts under test as subprocesses found on PATH.
+"scripts/agents/tests/*.py" = ["S101", "PLR2004", "S603", "S607"]
