@@ -166,6 +166,7 @@ jobs:
         env:
           REPO: '${{ matrix.repo }}'
           REPORT_FILE: '${{ steps.scan.outputs.report-file }}'
+          ENGINES_READY: '${{ steps.scan.outputs.engines-ready }}'
         run: |
           # Write score metrics for aggregation
           set -euo pipefail
@@ -176,11 +177,32 @@ jobs:
           # and the aggregation job's *.json glob skips dotfiles, so
           # an unprefixed metrics file silently drops the repository
           # from the organisation score table.
-          jq -c --arg repo "${REPO}" \
+          #
+          # 'advisory' counts aislop's coverage notices: an audit or
+          # analyzer that could not run (typically npm audit timing
+          # out against the registry). A missing engine binary is the
+          # same kind of gap. Both mean the score is inflated and the
+          # row is not comparable with a fully covered one, so the
+          # table flags it and the summary counts how many
+          # repositories scanned with reduced coverage that day. The
+          # rule list mirrors COVERAGE_RULES in aislop-scan-action's
+          # .github/scripts/aislop_coverage.py.
+          engines='true'
+          if [ "${ENGINES_READY:-true}" != 'true' ]; then
+            engines='false'
+          fi
+          jq -c --arg repo "${REPO}" --argjson engines "${engines}" \
+            --argjson notice '["security/dependency-audit-skipped",
+                               "dotnet/projects-skipped",
+                               "cppcheck/chunks-skipped"]' \
             '{repo: $repo, score: .score, label: .label,
               scoreable: .scoreable, errors: .summary.errors,
               warnings: .summary.warnings, fixable: .summary.fixable,
-              files: .summary.files}' \
+              files: .summary.files,
+              advisory: ([.diagnostics[]?
+                          | select(.rule as $r | $notice | index($r))]
+                         | length),
+              engines_ready: $engines}' \
             "${REPORT_FILE}" \
             > "${RUNNER_TEMP}/aislop-metrics/metrics-${REPO}.json"
 
@@ -340,14 +362,35 @@ jobs:
               'reported metrics.'
             echo
             if [ "${#files[@]}" -gt 0 ]; then
+              # Reduced coverage is an infrastructure signal (registry
+              # load, egress), not a property of the repository. Count
+              # it up front so a bad day at the registry reads as one
+              # rather than as a wave of newly clean repositories.
+              degraded="$(jq -s '[.[] | select(.advisory > 0
+                                           or .engines_ready == false)]
+                                | length' "${files[@]}")"
+              if [ "${degraded}" != '0' ]; then
+                echo "⚠️ ${degraded} repositories scanned with reduced" \
+                  'coverage (an audit or analyzer could not run); their' \
+                  'scores may be inflated and are not comparable with' \
+                  'the rest. Typically the npm registry advisory' \
+                  'endpoint timing out. See the Coverage column.'
+                echo
+              fi
               echo '| Repository | Score | Label | Errors' \
-                '| Warnings | Fixable | Files |'
-              echo '| --- | ---: | --- | ---: | ---: | ---: | ---: |'
+                '| Warnings | Fixable | Files | Coverage |'
+              echo '| --- | ---: | --- | ---: | ---: | ---: | ---: | --- |'
               # Rank worst-first; unscoreable repositories sort last.
               jq -r -s 'sort_by(.score // 999)[]
                 | "| \(.repo) | \(.score // "-") | \(.label // "-")"
                   + " | \(.errors) | \(.warnings) | \(.fixable)"
-                  + " | \(.files) |"' "${files[@]}"
+                  + " | \(.files) | "
+                  + (if .engines_ready == false
+                     then "⚠️ reduced (engines missing)"
+                     elif (.advisory // 0) > 0
+                     then "⚠️ reduced (\(.advisory) notice(s))"
+                     else "full" end)
+                  + " |"' "${files[@]}"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

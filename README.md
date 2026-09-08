@@ -489,7 +489,12 @@ zizmor publisher at 06:00) it:
    **Security → Code scanning** tab under the `aislop` tool.
 4. Aggregates per-repository score metrics into a ranked, worst-first
    table in the run's step summary, answering "which repositories have
-   the biggest problems?" at a glance.
+   the biggest problems?" at a glance. A **Coverage** column marks
+   repositories whose scan ran with reduced coverage (an audit or
+   analyzer could not run, or an engine binary was missing), and the
+   summary counts them up front, so a bad day at the npm registry
+   reads as one infrastructure event rather than as a wave of newly
+   clean repositories.
 
 When a **scheduled** run fails or a maintainer cancels it, the workflow
 posts a Slack alert to `#releng-scm` (reusing the `SLACK_BOT_TOKEN`
