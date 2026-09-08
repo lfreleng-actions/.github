@@ -46,6 +46,17 @@
 # legacy AISLOP_ENFORCE='true' variable still selects the 'all' tier;
 # otherwise the default is 'any'.
 #
+# Coverage: aislop emits a few diagnostics that record visibility loss
+# rather than a defect: a dependency audit that timed out against the
+# npm registry, analyzer chunks it could not run. They describe the
+# run, not the pull request, so the gate leaves them out of every
+# finding count and raises a warning instead: a clean result with
+# reduced coverage is not conclusive, and the run should be repeated
+# once the service recovers, but a registry outage is not a reason to
+# fail the change. Set AISLOP_STRICT_COVERAGE='true' (org or
+# repository variable) to make reduced coverage block at the enforcing
+# gate levels instead.
+#
 # See README.md ("Organisation-wide aislop scan") for org-admin setup.
 
 name: 'AI Slop Scan 🧹'
@@ -120,8 +131,12 @@ jobs:
           # switch honoured only when AISLOP_GATE_LEVEL is unset.
           AISLOP_GATE_LEVEL: '${{ vars.AISLOP_GATE_LEVEL }}'
           AISLOP_ENFORCE: '${{ vars.AISLOP_ENFORCE }}'
+          # 'true' makes reduced scan coverage block at the enforcing
+          # gate levels; by default it only warns.
+          AISLOP_STRICT_COVERAGE: '${{ vars.AISLOP_STRICT_COVERAGE }}'
           SCAN_RC: '${{ steps.scan.outputs.exit-code }}'
           REPORT_FILE: '${{ steps.scan.outputs.report-file }}'
+          ENGINES_READY: '${{ steps.scan.outputs.engines-ready }}'
         run: |
           # Enforce quality gate
           set -euo pipefail
@@ -191,21 +206,77 @@ jobs:
           # scanning), warning to medium, and info to low. The action
           # leaves the JSON report in place (only its install dir is
           # cleaned), so the report path stays readable here.
-          high="$(jq '[.diagnostics[]?
-                      | select(.severity == "error")] | length' \
-                  "${REPORT_FILE}")"
-          medium="$(jq '[.diagnostics[]?
-                        | select(.severity == "warning")] | length' \
-                    "${REPORT_FILE}")"
-          low="$(jq '[.diagnostics[]?
-                     | select(.severity == "info")] | length' \
-                 "${REPORT_FILE}")"
-          # Total counts every diagnostic, whatever its severity, so a
-          # severity this gate does not name still blocks.
-          total="$(jq '[.diagnostics[]?] | length' "${REPORT_FILE}")"
+          #
+          # Coverage notices are excluded from every count. aislop
+          # emits them when an audit or analyzer could not run (its
+          # own rationale: "visibility loss, not evidence of a
+          # defect"), most often the dependency audit timing out
+          # against the npm registry. Counting one as a finding turns
+          # a registry outage into "a pull request must not add
+          # findings", which blames the change for something it did
+          # not do. They are reported separately below. The list is
+          # explicit by rule: aislop's 'advisory' score tier, which
+          # these share, also holds ordinary style findings. Keep it
+          # in step with COVERAGE_RULES in aislop-scan-action's
+          # .github/scripts/aislop_coverage.py.
+          notice='["security/dependency-audit-skipped",
+                   "dotnet/projects-skipped",
+                   "cppcheck/chunks-skipped"]'
+          # Run a jq program against the report with is_notice defined.
+          report_jq() {
+            jq -r --argjson notice "${notice}" \
+              "def is_notice: .rule as \$r | \$notice | index(\$r) != null;
+               $1" "${REPORT_FILE}"
+          }
+          finding='.diagnostics[]? | select(is_notice | not)'
+          high="$(report_jq "[${finding} | select(.severity == \"error\")]
+                             | length")"
+          medium="$(report_jq "[${finding} | select(.severity == \"warning\")]
+                               | length")"
+          low="$(report_jq "[${finding} | select(.severity == \"info\")]
+                            | length")"
+          # Total counts every non-notice diagnostic, whatever its
+          # severity, so a severity this gate does not name still
+          # blocks.
+          total="$(report_jq "[${finding}] | length")"
+          advisory="$(report_jq '[.diagnostics[]? | select(is_notice)]
+                                 | length')"
           echo "aislop findings on changed files: ${total}" \
-               "(high ${high}, medium ${medium}, low ${low})"
+               "(high ${high}, medium ${medium}, low ${low});" \
+               "coverage notices: ${advisory}"
           echo "aislop gate exit code: ${SCAN_RC}"
+
+          # Reduced coverage: a coverage notice, or a required engine
+          # binary the action could not provision. Either way the
+          # score may be inflated and a clean result is not
+          # conclusive. Warn by default so the condition is visible on
+          # the run as an infrastructure problem rather than as a
+          # finding; block only when the estate opts in.
+          degraded='false'
+          if [ "${advisory}" != '0' ] \
+             || [ "${ENGINES_READY:-true}" != 'true' ]; then
+            degraded='true'
+            detail="$(report_jq '[.diagnostics[]? | select(is_notice)
+                                 | "\(.rule): \(.message)"
+                                   + (if .help then " (\(.help))"
+                                      else "" end)]
+                                 | join("; ")')"
+            if [ "${ENGINES_READY:-true}" != 'true' ]; then
+              detail="${detail:+${detail}; }engine binaries missing"
+            fi
+            msg='aislop ran with reduced coverage, so this result is not'
+            msg="${msg} conclusive: ${detail}. This is a tooling or"
+            msg="${msg} infrastructure condition (registry load, egress),"
+            msg="${msg} not a finding against the pull request; re-run the"
+            msg="${msg} check once the service recovers."
+            if [ "${AISLOP_STRICT_COVERAGE:-}" = 'true' ]; then
+              echo "::error title=aislop scan coverage degraded::${msg}" \
+                   '(AISLOP_STRICT_COVERAGE=true makes this block.)'
+              exit 1
+            fi
+            echo "::warning title=aislop scan coverage degraded::${msg}"
+          fi
+          echo "coverage degraded: ${degraded}"
 
           case "${level}" in
             any)
