@@ -404,6 +404,25 @@ files 0–100 and reports each finding with severity and location.
   For backward compatibility, when `AISLOP_GATE_LEVEL` is unset the
   legacy **`AISLOP_ENFORCE`** `= true` variable still selects the
   `all` tier. Changing the level requires no workflow change.
+- **Reduced coverage**: parts of the scan depend on services outside
+  the runner. aislop's dependency audit queries the npm registry's
+  advisory endpoint with the whole dependency tree, and under registry
+  load that request can exceed aislop's 25 s audit timeout. aislop
+  records the gap as a **coverage notice**
+  (`security/dependency-audit-skipped`; likewise
+  `dotnet/projects-skipped` and `cppcheck/chunks-skipped`) rather
+  than a finding: its own rationale is "visibility loss, not evidence
+  of a defect". The gate leaves those three rules out of every finding
+  count and instead raises a job-level warning titled *aislop scan
+  coverage degraded* naming the underlying error, so a registry
+  outage reads as an infrastructure condition rather than as a
+  finding the pull request added. A clean result with reduced
+  coverage is not conclusive; re-run the check once the service
+  recovers. Set the **`AISLOP_STRICT_COVERAGE`** organisation or
+  repository variable to `true` to make reduced coverage block at the
+  enforcing gate levels. A missing engine binary (`engines-ready` =
+  `false` from the action) counts as reduced coverage in the same
+  way.
 - **Version pin**: the aislop CLI version pin lives in
   `aislop-scan-action` (its bundled `package.json` / `package-lock.json`);
   bump it there via a PR and release, then update the action pin here.
@@ -470,7 +489,12 @@ zizmor publisher at 06:00) it:
    **Security → Code scanning** tab under the `aislop` tool.
 4. Aggregates per-repository score metrics into a ranked, worst-first
    table in the run's step summary, answering "which repositories have
-   the biggest problems?" at a glance.
+   the biggest problems?" at a glance. A **Coverage** column marks
+   repositories whose scan ran with reduced coverage (an audit or
+   analyzer could not run, or an engine binary was missing), and the
+   summary counts them up front, so a bad day at the npm registry
+   reads as one infrastructure event rather than as a wave of newly
+   clean repositories.
 
 When a **scheduled** run fails or a maintainer cancels it, the workflow
 posts a Slack alert to `#releng-scm` (reusing the `SLACK_BOT_TOKEN`
