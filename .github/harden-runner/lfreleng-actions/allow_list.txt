@@ -447,6 +447,13 @@ logs.o-ran-sc.org:443
 logs.onap.org:443
 logs.opendaylight.org:443
 
+# Maven Central's Google Cloud Storage download host, which Central
+# redirects artifact fetches to. Needed in its own right: it sits two
+# labels below 'googleapis.com', so no single-label wildcard reaches
+# it, and 'storage.googleapis.com' is a different host. Observed in
+# ONAP cps Maven builds; candidate for a dedicated ONAP list.
+maven-central.storage-download.googleapis.com:443
+
 # CentOS Stream canonical content host; serves directly with no
 # mirror redirect, so it is the host to pin 'baseurl' to. Required
 # in its own right: '*.centos.org' does not match a nested host.
@@ -520,6 +527,11 @@ oss-fuzz-build-logs.storage.googleapis.com:443
 # packagecloud.io; FD.io package repository (deb/rpm).
 packagecloud.io:443
 
+# Confluent Maven repository; Kafka client and Avro/schema-registry
+# artifacts that resolve outside Maven Central. Observed in ONAP cps
+# Maven builds; candidate for a dedicated ONAP list.
+packages.confluent.io:443
+
 # Microsoft package archive over apt (go-httpbin-action,
 # python-build-action).
 packages.microsoft.com:443
@@ -572,6 +584,11 @@ repo.maven.apache.org:443
 
 # Maven Central (repo1); Java dependency downloads.
 repo1.maven.org:443
+
+# Hazelcast Maven repository; in-memory data grid artifacts that
+# resolve outside Maven Central. Observed in ONAP cps Maven builds;
+# candidate for a dedicated ONAP list.
+repository.hazelcast.com:443
 
 # Build log storage (FD.io); S3-backed job logs.
 s3-logs.fd.io:443
