@@ -2,8 +2,27 @@
 # SPDX-FileCopyrightText: 2026 The Linux Foundation
 
 # Tool configuration only: this repository is not a Python package, but
-# the organisation-audit scripts under .github/scripts are held to the
+# the organisation-audit scripts under .github/scripts and the tests for
+# the AGENTS.md reference scripts under scripts/agents are held to the
 # strictest available linting posture.
+
+# `uv sync` creates .venv with the test and type-checking dependencies,
+# which is what lets basedpyright (editor and CI) resolve pytest's
+# fixture and mark types. The basedpyright pin matches the pre-commit
+# hook revision so both report the same findings.
+[project]
+name = "lfreleng-actions-github"
+version = "0"
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = ["basedpyright==1.39.10", "pytest==9.1.1"]
+
+[tool.pytest.ini_options]
+testpaths = ["scripts/agents/tests"]
+# strict xfail is the AGENTS.md §6.5 contract: a test marked as expected to fail
+# that passes fails the run, so the marker cannot outlive its fix.
+xfail_strict = true
 
 [tool.basedpyright]
 # "all" is the strictest mode basedpyright offers: every diagnostic
@@ -12,13 +31,18 @@
 # so local and CI results agree.
 typeCheckingMode = "all"
 pythonVersion = "3.11"
-include = [".github/scripts"]
-exclude = [".worktrees", ".mypy_cache", ".ruff_cache"]
+include = [".github/scripts", "scripts/agents/tests"]
+exclude = [".worktrees", ".mypy_cache", ".ruff_cache", ".venv"]
+# The pytest imports in scripts/agents/tests resolve from the .venv that
+# `uv sync` creates. It is not named here: basedpyright exits 3 when a
+# configured venv is absent, and pre-commit.ci never has one. The CI
+# workflow passes --venvpath explicitly, and an editor running from the
+# uv environment (`uv run`, or with .venv activated) finds it on its own.
 
 [tool.mypy]
 strict = true
 # Match basedpyright's pythonVersion so both type-checking gates
 # enforce the same target regardless of the interpreter running them.
 python_version = "3.11"
-files = [".github/scripts"]
+files = [".github/scripts", "scripts/agents/tests"]
 exclude = ["\\.worktrees"]

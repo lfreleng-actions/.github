@@ -1,0 +1,89 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Contract tests for the AGENTS.md reference scripts under
+# scripts/agents. The scripts are the executable form of the gates the
+# document describes (the aislop gate, the Gerrit amend, review-thread
+# resolution); the tests define what "correct" means for each, including
+# every false-pass case found in review. This workflow keeps that
+# definition enforced rather than merely written down.
+
+name: 'Agent Scripts 🧪'
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/agents/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/agent-scripts.yaml'
+
+permissions: {}
+
+concurrency:
+  group: 'agent-scripts-${{ github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 'Test reference scripts'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Load the egress allow-list out-of-band and publish it as
+      # $CONNECTION_ALLOW_LIST for the harden-runner step below.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@6db537b3e6d060c3287c5a3ce2c28b55b0af330d  # v0.2.1
+        with:
+          config: '@18d9c4446bea555d0783e850f6d295f844fe8f67'  # v0.1.1
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c  # v2.21.0
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Checkout repository'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 'Install uv'
+        # yamllint disable-line rule:line-length
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+
+      - name: 'Install locked dependencies'
+        shell: 'bash'
+        run: |
+          set -euo pipefail
+          # The dev group in pyproject.toml pins pytest and basedpyright;
+          # --locked refuses to proceed if uv.lock is out of date.
+          uv sync --locked
+
+      - name: 'Type-check the test suite'
+        shell: 'bash'
+        run: |
+          set -euo pipefail
+          # The pre-commit basedpyright hook excludes scripts/agents/tests
+          # because pre-commit.ci cannot fit pytest into that hook's
+          # environment. This step is the strict type gate for the
+          # suite; --venvpath points basedpyright at the .venv uv just
+          # created, so the pytest fixture and mark types resolve here.
+          uv run basedpyright --venvpath .
+
+      - name: 'Run the contract tests'
+        shell: 'bash'
+        run: |
+          set -euo pipefail
+          # The suite stubs aislop and gh on PATH and drives git against
+          # throwaway repositories, so it needs nothing beyond pytest
+          # and what the runner already carries (git, ssh-keygen).
+          uv run pytest -q
