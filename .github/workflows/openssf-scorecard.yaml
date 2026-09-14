@@ -42,7 +42,7 @@ jobs:
     # by a ruleset and there is no pull_request trigger, so none of the
     # three gates a merge.
     # yamllint disable-line rule:line-length
-    uses: lfreleng-actions/security-workflows/.github/workflows/openssf-scorecard.yaml@921904035e4559b4bf9069d3e821ffb4db3cfe88  # v0.5.0
+    uses: lfreleng-actions/security-workflows/.github/workflows/openssf-scorecard.yaml@0dd3d5f05930b3c782a67f7735fd0133c0fa51d9  # v0.6.1
     permissions:
       # Needed to read repository contents (checkout, etc.).
       contents: read
