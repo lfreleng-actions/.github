@@ -21,28 +21,29 @@ with signed tags and provenance attestations.
 
 <!-- markdownlint-disable MD013 -->
 
-| Action                        | Description                                                   |
-| ----------------------------- | ------------------------------------------------------------- |
-| [python-build-action]         | Build a Python project                                        |
-| [python-test-action]          | Test a Python project and generate coverage reports           |
-| [python-audit-action]         | Audit Python dependencies for known security vulnerabilities  |
-| [python-twine-check-action]   | Verify Python build artefacts with Twine before publishing    |
-| [python-notebook-test-action] | Check Jupyter Notebooks with pytest and nbmake                |
-| [python-sbom-action]          | Generate CycloneDX SBOM reports for Python projects           |
-| [tox-run-action]              | Run tox with specified Python version and environments        |
-| [gradle-build-action]         | Set up a specific JDK version and run a Gradle build          |
-| [maven-build-action]          | Set up Maven and build a Java project                         |
-| [maven-make-build-action]     | Set up Maven and run make                                     |
-| [maven-xml-settings-action]   | Create Maven XML settings files for build and publish jobs    |
-| [junit-test-report-action]    | Summarise JUnit XML test results in the workflow job summary  |
-| [node-build-action]           | Set up Node.js and build a project with npm or yarn           |
-| [node-audit-action]           | Audit Node.js dependencies for known security vulnerabilities |
-| [go-build-action]             | Build a Go project with optional cross-compilation support    |
-| [go-test-action]              | Run Go tests with coverage and race detection support         |
-| [go-audit-action]             | Audit a Go project with govulncheck, gosec, and staticcheck   |
-| [sbom-action]                 | Generate CycloneDX SBOM reports for any language ecosystem    |
-| [make-action]                 | Execute the steps described in a Makefile                     |
-| [rtd-build-action]            | Build and publish Read the Docs documentation                 |
+| Action                        | Description                                                      |
+| ----------------------------- | ---------------------------------------------------------------- |
+| [python-build-action]         | Build a Python project                                           |
+| [python-test-action]          | Test a Python project and generate coverage reports              |
+| [python-audit-action]         | Audit Python dependencies for known security vulnerabilities     |
+| [python-twine-check-action]   | Verify Python build artefacts with Twine before publishing       |
+| [python-notebook-test-action] | Check Jupyter Notebooks with pytest and nbmake                   |
+| [python-sbom-action]          | Generate CycloneDX SBOM reports for Python projects              |
+| [tox-run-action]              | Run tox with specified Python version and environments           |
+| [gradle-build-action]         | Set up a specific JDK version and run a Gradle build             |
+| [maven-build-action]          | Set up Maven and build a Java project                            |
+| [maven-make-build-action]     | Set up Maven and run make                                        |
+| [maven-xml-settings-action]   | Create Maven XML settings files for build and publish jobs       |
+| [junit-test-report-action]    | Summarise JUnit XML test results in the workflow job summary     |
+| [node-build-action]           | Set up Node.js and build a project with npm or yarn              |
+| [node-audit-action]           | Audit Node.js dependencies for known security vulnerabilities    |
+| [go-build-action]             | Build a Go project with optional cross-compilation support       |
+| [go-test-action]              | Run Go tests with coverage and race detection support            |
+| [go-audit-action]             | Audit a Go project with govulncheck, gosec, and staticcheck      |
+| [sbom-action]                 | Generate CycloneDX SBOM reports for any language ecosystem       |
+| [cbom-action]                 | Generate CycloneDX Cryptography Bill of Materials (CBOM) reports |
+| [make-action]                 | Execute the steps described in a Makefile                        |
+| [rtd-build-action]            | Build and publish Read the Docs documentation                    |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -137,7 +138,7 @@ with signed tags and provenance attestations.
 | [credential-load-action]         | Retrieve project/repository specific credentials from a 1Password vault |
 | [grype-scan-action]              | Scan SBOMs, images, or directories for vulnerabilities with Grype       |
 | [harden-runner-block-action]     | Load an egress allow-list for step-security/harden-runner block mode    |
-| [sigul-sign-docker]              | Sign build packages, artefacts, and git tags using Sigul                |
+| [sigul-docker-k8s]               | Sigul containers and Helm Charts to perform cryptographic signing       |
 | [sonarqube-cloud-scan-action]    | Perform a SonarQube Cloud scan and upload the results                   |
 | [sonatype-lifecycle-scan-action] | Run a Sonatype Lifecycle (Nexus IQ) scan                                |
 | [zizmor-scan-action]             | Audit GitHub Actions workflows for security defects with zizmor         |
@@ -161,6 +162,7 @@ with signed tags and provenance attestations.
 | [change-isolation-action]          | Verify a change isolates edits to gitignore-style path patterns     |
 | [aislop-scan-action]               | Scan a repository with the aislop AI-slop/code-quality scanner      |
 | [rtd-config-audit-action]          | Audit and verify Read the Docs configuration files                  |
+| [info-yaml-validate-action]        | Validate INFO.yaml files and verify the repositories they declare   |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -397,6 +399,7 @@ to all repositories unless otherwise stated.
 [go-test-action]: https://github.com/lfreleng-actions/go-test-action
 [go-audit-action]: https://github.com/lfreleng-actions/go-audit-action
 [sbom-action]: https://github.com/lfreleng-actions/sbom-action
+[cbom-action]: https://github.com/lfreleng-actions/cbom-action
 [make-action]: https://github.com/lfreleng-actions/make-action
 [rtd-build-action]: https://github.com/lfreleng-actions/rtd-build-action
 
@@ -451,7 +454,7 @@ to all repositories unless otherwise stated.
 [credential-load-action]: https://github.com/lfreleng-actions/credential-load-action
 [grype-scan-action]: https://github.com/lfreleng-actions/grype-scan-action
 [harden-runner-block-action]: https://github.com/lfreleng-actions/harden-runner-block-action
-[sigul-sign-docker]: https://github.com/lfreleng-actions/sigul-sign-docker
+[sigul-docker-k8s]: https://github.com/lfreleng-actions/sigul-docker-k8s
 [sonarqube-cloud-scan-action]: https://github.com/lfreleng-actions/sonarqube-cloud-scan-action
 [sonatype-lifecycle-scan-action]: https://github.com/lfreleng-actions/sonatype-lifecycle-scan-action
 [zizmor-scan-action]: https://github.com/lfreleng-actions/zizmor-scan-action
@@ -468,6 +471,7 @@ to all repositories unless otherwise stated.
 [change-isolation-action]: https://github.com/lfreleng-actions/change-isolation-action
 [aislop-scan-action]: https://github.com/lfreleng-actions/aislop-scan-action
 [rtd-config-audit-action]: https://github.com/lfreleng-actions/rtd-config-audit-action
+[info-yaml-validate-action]: https://github.com/lfreleng-actions/info-yaml-validate-action
 
 <!-- Utility Actions -->
 [git-configure-action]: https://github.com/lfreleng-actions/git-configure-action
