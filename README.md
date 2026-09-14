@@ -14,6 +14,31 @@ organisation unless overridden at the repository level.
 
 ## Contents
 
+### Contributor Guidance
+
+- **[`AGENTS.md`](AGENTS.md)** — The default guidance document for AI
+  coding agents working on any repository in the organisation. Covers
+  commit format, signing and DCO, pre-commit hooks, testing gates, and
+  pull request review cycles. It binds every contribution, including
+  those from third parties and the agents acting on their behalf.
+  Individual repositories are to carry a thin `AGENTS.md` stub that links
+  back here and may impose further requirements; no local file can relax
+  the rules here. Unlike the community health files below, GitHub does
+  not inject `AGENTS.md` into other repositories' checkouts, so the
+  organisation distributes it through that stub, whose shape §12
+  defines. Rolling the stub out across the organisation is follow-up
+  work; until it lands, the rules bind regardless of whether a given
+  agent loaded the file.
+- **[`scripts/agents/`](scripts/agents/)** — Reference implementations
+  of the three `AGENTS.md` rules that are contracts with exit
+  semantics: the AI-slop gate (`aislop-gate.sh`), the Change-Id
+  preserving Gerrit amend (`gerrit-amend.sh`), and review-thread
+  resolution (`resolve-review-thread.sh`). Each has a pytest suite
+  under `scripts/agents/tests/` covering the false-pass cases review
+  has found; the tests define what "correct" means, and agents in
+  other repositories may run, vendor or reimplement the scripts against
+  them. `agent-scripts.yaml` runs the suite on every change.
+
 ### Organisation Profile
 
 - **[`profile/README.md`](profile/README.md)** — The public-facing
@@ -89,6 +114,9 @@ organisation unless overridden at the repository level.
   attention are easy to spot. See
   [Organisation-wide aislop SARIF publisher](#organisation-wide-aislop-sarif-publisher)
   below for setup.
+- **[`agent-scripts.yaml`](.github/workflows/agent-scripts.yaml)** —
+  Runs the contract tests for the `AGENTS.md` reference scripts under
+  `scripts/agents/` on every pull request that touches them.
 
 ### Repository Exclusions
 
