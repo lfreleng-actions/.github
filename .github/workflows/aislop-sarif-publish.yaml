@@ -85,7 +85,7 @@ jobs:
     name: 'Discover repositories'
     permissions:
       contents: read
-    uses: './.github/workflows/repo-discovery.yaml'
+    uses: '$/.github/workflows/repo-discovery.yaml'
     with:
       org: '${{ inputs.org || github.repository_owner }}'
       only-repo: '${{ inputs.repo }}'

@@ -89,7 +89,7 @@ jobs:
     # Shared with the aislop publisher so both scanners always cover
     # the same repository selection (scope policy read from
     # .github/scan-scope.json).
-    uses: './.github/workflows/repo-discovery.yaml'
+    uses: '$/.github/workflows/repo-discovery.yaml'
     with:
       org: '${{ inputs.org || github.repository_owner }}'
       only-repo: '${{ inputs.repo }}'
