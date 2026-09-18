@@ -116,7 +116,7 @@ jobs:
       contents: read
     # Shared with the SARIF publishers so scope policy lives in one place
     # (.github/scan-scope.json plus the include/exclude inputs).
-    uses: './.github/workflows/repo-discovery.yaml'
+    uses: '$/.github/workflows/repo-discovery.yaml'
     with:
       org: '${{ inputs.org || github.repository_owner }}'
       only-repo: '${{ inputs.repo }}'

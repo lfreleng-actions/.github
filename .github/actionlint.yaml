@@ -4,19 +4,29 @@
 
 # Path-specific actionlint configuration.
 paths:
-  .github/workflows/semantic-pull-request.yaml:
+  # This fork adds a cache-access policy check that upstream v1.7.12
+  # does not have. It wants 'cache-mode: read' or 'cache-mode: none' on
+  # reusable workflow calls made under a low-trust trigger.
+  #
+  # GitHub shipped 'cache-mode' on 2026-09-10 and SchemaStore's workflow
+  # schema already models it, but check-jsonschema 0.38.0, the newest
+  # release, vendors an older copy, so adding the key fails the
+  # check-github-workflows hook. Suppress the lint rather than write a
+  # key another mandatory hook rejects.
+  #
+  # Remove these entries once a check-jsonschema release vendors a
+  # schema containing 'cache-mode', then set 'cache-mode: read' on the
+  # jobs. Each entry names its one callee, so any other reusable
+  # workflow call added to these files must account for cache access on
+  # its own merits. The pinned SHA is matched as [0-9a-f]{40} rather
+  # than written out: Dependabot rotates it, and naming it here would
+  # fail the lint on every bump.
+  .github/workflows/autolabeler.yaml:
     ignore:
-      # actionlint does not yet know the 'queue' concurrency key.
-      #
-      # GitHub documents it under 'concurrency' and
-      # 'jobs.<job_id>.concurrency': 'single' (the default) holds one
-      # pending run and cancels it when another arrives, while 'max'
-      # holds up to 100 and runs them in order. This workflow needs
-      # 'max' so a burst of pull request events cannot leave a
-      # cancelled check run behind. See the comment on the concurrency
-      # block in that file.
-      #
-      # actionlint validates the key against a hardcoded list
-      # (cancel-in-progress, group), so it reports the key as
-      # unexpected. Remove this ignore once actionlint learns it.
-      - 'unexpected key "queue" for "concurrency" section'
+      # yamllint disable-line rule:line-length
+      - 'reusable workflow call "lfreleng-actions/generic-workflows/\.github/workflows/autolabeler\.yaml@[0-9a-f]{40}" has no explicit cache access limit'
+
+  .github/workflows/openssf-scorecard.yaml:
+    ignore:
+      # yamllint disable-line rule:line-length
+      - 'reusable workflow call "lfreleng-actions/security-workflows/\.github/workflows/openssf-scorecard\.yaml@[0-9a-f]{40}" has no explicit cache access limit'
