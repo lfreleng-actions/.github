@@ -9,10 +9,34 @@ This repository contains shared configuration and community health files
 for the [lfreleng-actions](https://github.com/lfreleng-actions) GitHub
 organisation (Linux Foundation Release Engineering).
 
-Files placed here are automatically inherited by all repositories in the
-organisation unless overridden at the repository level.
+Community health files placed here are automatically inherited by all
+repositories in the organisation unless overridden at the repository
+level. Each entry below says how the rest reach repositories.
 
 ## Contents
+
+### Contributor Guidance
+
+- **[`AGENTS.md`](AGENTS.md)** — The default guidance document for AI
+  coding agents working on any repository in the organisation. Covers
+  commit format, signing and DCO, pre-commit hooks, testing gates, and
+  pull request review cycles. It binds every contribution, including
+  those from third parties and the agents acting on their behalf, even
+  when the agent that produced it never read the file.
+
+  Each repository carries a thin `AGENTS.md` that points here, in the
+  shape §12 of that document defines; a stub may add requirements, but
+  cannot relax these.
+- **[`scripts/agents/`](scripts/agents/)** — Reference implementations
+  of the three `AGENTS.md` rules that are contracts with exit
+  semantics: the AI-slop gate (`aislop-gate.sh`), the Change-Id
+  preserving Gerrit amend (`gerrit-amend.sh`), and review-thread
+  resolution (`resolve-review-thread.sh`). Each has a pytest suite
+  under `scripts/agents/tests/` covering the false-pass cases review
+  has found; the tests define what "correct" means, and agents in
+  other repositories may run, vendor or reimplement the scripts against
+  them. `agent-scripts.yaml` runs the suite on every pull request that
+  touches them.
 
 ### Organisation Profile
 
@@ -89,6 +113,9 @@ organisation unless overridden at the repository level.
   attention are easy to spot. See
   [Organisation-wide aislop SARIF publisher](#organisation-wide-aislop-sarif-publisher)
   below for setup.
+- **[`agent-scripts.yaml`](.github/workflows/agent-scripts.yaml)** —
+  Runs the contract tests for the `AGENTS.md` reference scripts under
+  `scripts/agents/` on every pull request that touches them.
 
 ### Repository Exclusions
 
