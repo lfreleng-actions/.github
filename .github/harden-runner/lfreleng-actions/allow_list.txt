@@ -211,6 +211,12 @@ cdn.amazonlinux.com:443
 # Azul Zulu JDK download CDN (Java toolchain setup).
 cdn.azul.com:443
 
+# crates.io registry API, named as 'api' in the index's config.json:
+# 'cargo publish' uploads here, and rust-lang/crates-io-auth-action
+# exchanges a GitHub OIDC token here for a Trusted Publishing token
+# (rust-crate-publish-action). An apex host, so no wildcard covers it.
+crates.io:443
+
 # Google download server, fetched by go-httpbin-action and
 # python-build-action.
 dl.google.com:443
@@ -367,6 +373,11 @@ hyperledger-fabric.readthedocs.io:443
 
 # Artifactory (Hyperledger); LF project artifact repository.
 hyperledger.jfrog.io:443
+
+# crates.io sparse registry index, read by any Cargo command that
+# resolves a registry dependency or checks the registry, including
+# 'cargo publish --dry-run' (rust-crate-publish-action).
+index.crates.io:443
 
 # Docker Hub registry: image descriptor resolution. Clients that read
 # an image straight from the registry, without a local daemon, hit
@@ -603,6 +614,10 @@ slack.com:443
 
 # SonarQube Cloud apex host; sonarqube-cloud-scan-action.
 sonarcloud.io:443
+
+# crates.io crate download host, named as 'dl' in the index's
+# config.json; Cargo fetches dependency .crate files from here.
+static.crates.io:443
 
 # Rust static assets (toolchain/metadata), fetched by
 # build-metadata-action.
