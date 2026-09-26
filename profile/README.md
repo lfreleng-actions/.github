@@ -40,6 +40,7 @@ with signed tags and provenance attestations.
 | [go-build-action]             | Build a Go project with optional cross-compilation support       |
 | [go-test-action]              | Run Go tests with coverage and race detection support            |
 | [go-audit-action]             | Audit a Go project with govulncheck, gosec, and staticcheck      |
+| [docker-build-matrix-action]  | Resolve Docker images to build, with their names and build order |
 | [sbom-action]                 | Generate CycloneDX SBOM reports for any language ecosystem       |
 | [cbom-action]                 | Generate CycloneDX Cryptography Bill of Materials (CBOM) reports |
 | [make-action]                 | Execute the steps described in a Makefile                        |
@@ -51,21 +52,22 @@ with signed tags and provenance attestations.
 
 <!-- markdownlint-disable MD013 -->
 
-| Action                         | Description                                                 |
-| ------------------------------ | ----------------------------------------------------------- |
-| [pypi-publish-action]          | Publish a Python project to PyPI                            |
-| [pypi-version-check-action]    | Check PyPI for a given package and optional build/release   |
-| [draft-release-promote-action] | Promote a draft GitHub release to a full release            |
-| [release-assets-action]        | Upload build artefacts and assets to a GitHub release       |
-| [nexus-publish-action]         | Publish content to Sonatype Nexus Repository servers        |
-| [nexus-docker-login-action]    | Docker login for all registries in Nexus3 and DockerHub     |
-| [helm-chart-publish-action]    | Publish Helm Charts to an OCI container repository          |
-| [chartmuseum-action]           | Start and run a ChartMuseum Helm Chart repository           |
-| [central-publish-action]       | Publish Maven artefacts to the Maven Central Portal         |
-| [maven-stage-prep-action]      | Prepare a Maven project for a staging release               |
-| [nexus-staging-action]         | Manage the Sonatype Nexus staging repository lifecycle      |
-| [node-create-npmrc-action]     | Create an NPM configuration file containing credentials     |
-| [node-publish-action]          | Stamp a version and publish a Node.js package to a registry |
+| Action                           | Description                                                 |
+| -------------------------------- | ----------------------------------------------------------- |
+| [pypi-publish-action]            | Publish a Python project to PyPI                            |
+| [pypi-version-check-action]      | Check PyPI for a given package and optional build/release   |
+| [draft-release-promote-action]   | Promote a draft GitHub release to a full release            |
+| [release-assets-action]          | Upload build artefacts and assets to a GitHub release       |
+| [nexus-publish-action]           | Publish content to Sonatype Nexus Repository servers        |
+| [nexus-docker-login-action]      | Docker login for all registries in Nexus3 and DockerHub     |
+| [helm-chart-publish-action]      | Publish Helm Charts to an OCI container repository          |
+| [chartmuseum-action]             | Start and run a ChartMuseum Helm Chart repository           |
+| [central-publish-action]         | Publish Maven artefacts to the Maven Central Portal         |
+| [maven-stage-prep-action]        | Prepare a Maven project for a staging release               |
+| [maven-snapshot-metadata-action] | Seed and prune Maven SNAPSHOT metadata in Nexus             |
+| [nexus-staging-action]           | Manage the Sonatype Nexus staging repository lifecycle      |
+| [node-create-npmrc-action]       | Create an NPM configuration file containing credentials     |
+| [node-publish-action]            | Stamp a version and publish a Node.js package to a registry |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -139,6 +141,7 @@ with signed tags and provenance attestations.
 | [grype-scan-action]              | Scan SBOMs, images, or directories for vulnerabilities with Grype       |
 | [harden-runner-block-action]     | Load an egress allow-list for step-security/harden-runner block mode    |
 | [sigul-docker-k8s]               | Sigul containers and Helm Charts to perform cryptographic signing       |
+| [sigul-sign-action]              | Perform code signing operations against a remote Sigul server           |
 | [sonarqube-cloud-scan-action]    | Perform a SonarQube Cloud scan and upload the results                   |
 | [sonatype-lifecycle-scan-action] | Run a Sonatype Lifecycle (Nexus IQ) scan                                |
 | [zizmor-scan-action]             | Audit GitHub Actions workflows for security defects with zizmor         |
@@ -234,9 +237,11 @@ verify the actions and workflows in this organisation:
 | Repository                     | Purpose                                                |
 | ------------------------------ | ------------------------------------------------------ |
 | [test-python-project]          | Sample Python project (Typer CLI)                      |
+| [test-python-submodules]       | Frozen Python fixture with nested git submodules       |
 | [test-go-project]              | Sample Go project (calculator CLI)                     |
 | [test-node-project]            | Sample Node.js project (Express HTTP server)           |
 | [test-maven-project]           | Sample Maven project used for testing actions          |
+| [test-gradle-project]          | Sample Gradle project used for testing actions         |
 | [test-docker-project]          | Sample project that builds a Docker image              |
 | [test-docker-monorepo]         | Multi-image Docker monorepo with same-repo FROM chains |
 | [test-makefile-helm-chart]     | Template Makefile for building a sample Helm Chart     |
@@ -270,6 +275,7 @@ verify the actions and workflows in this organisation:
 | [dependamerge]         | Bulk merge/close pull requests and Gerrit changes across an org  |
 | [docs-conf]            | Sphinx build configuration for Release Engineering documentation |
 | [gerrit-to-platform]   | Gerrit hooks to allow using GitHub and GitLab as CI platforms    |
+| [github-code-monkey]   | Raise pull requests addressing open issues with Copilot          |
 | [lftools-uv]           | Release Engineering management tooling/utilities (Python)        |
 | [markdown-table-fixer] | Fix markdown table formatting as a CLI tool or pre-commit hook   |
 | [pull-request-fixer]   | Fix pull request titles, bodies, and files across a GitHub org   |
@@ -398,6 +404,7 @@ to all repositories unless otherwise stated.
 [go-build-action]: https://github.com/lfreleng-actions/go-build-action
 [go-test-action]: https://github.com/lfreleng-actions/go-test-action
 [go-audit-action]: https://github.com/lfreleng-actions/go-audit-action
+[docker-build-matrix-action]: https://github.com/lfreleng-actions/docker-build-matrix-action
 [sbom-action]: https://github.com/lfreleng-actions/sbom-action
 [cbom-action]: https://github.com/lfreleng-actions/cbom-action
 [make-action]: https://github.com/lfreleng-actions/make-action
@@ -414,6 +421,7 @@ to all repositories unless otherwise stated.
 [chartmuseum-action]: https://github.com/lfreleng-actions/chartmuseum-action
 [central-publish-action]: https://github.com/lfreleng-actions/central-publish-action
 [maven-stage-prep-action]: https://github.com/lfreleng-actions/maven-stage-prep-action
+[maven-snapshot-metadata-action]: https://github.com/lfreleng-actions/maven-snapshot-metadata-action
 [nexus-staging-action]: https://github.com/lfreleng-actions/nexus-staging-action
 [node-create-npmrc-action]: https://github.com/lfreleng-actions/node-create-npmrc-action
 [node-publish-action]: https://github.com/lfreleng-actions/node-publish-action
@@ -455,6 +463,7 @@ to all repositories unless otherwise stated.
 [grype-scan-action]: https://github.com/lfreleng-actions/grype-scan-action
 [harden-runner-block-action]: https://github.com/lfreleng-actions/harden-runner-block-action
 [sigul-docker-k8s]: https://github.com/lfreleng-actions/sigul-docker-k8s
+[sigul-sign-action]: https://github.com/lfreleng-actions/sigul-sign-action
 [sonarqube-cloud-scan-action]: https://github.com/lfreleng-actions/sonarqube-cloud-scan-action
 [sonatype-lifecycle-scan-action]: https://github.com/lfreleng-actions/sonatype-lifecycle-scan-action
 [zizmor-scan-action]: https://github.com/lfreleng-actions/zizmor-scan-action
@@ -509,9 +518,11 @@ to all repositories unless otherwise stated.
 
 <!-- Test Fixtures & Sample Projects -->
 [test-python-project]: https://github.com/lfreleng-actions/test-python-project
+[test-python-submodules]: https://github.com/lfreleng-actions/test-python-submodules
 [test-go-project]: https://github.com/lfreleng-actions/test-go-project
 [test-node-project]: https://github.com/lfreleng-actions/test-node-project
 [test-maven-project]: https://github.com/lfreleng-actions/test-maven-project
+[test-gradle-project]: https://github.com/lfreleng-actions/test-gradle-project
 [test-docker-project]: https://github.com/lfreleng-actions/test-docker-project
 [test-docker-monorepo]: https://github.com/lfreleng-actions/test-docker-monorepo
 [test-makefile-helm-chart]: https://github.com/lfreleng-actions/test-makefile-helm-chart
@@ -531,6 +542,7 @@ to all repositories unless otherwise stated.
 [dependamerge]: https://github.com/lfreleng-actions/dependamerge
 [docs-conf]: https://gerrit.linuxfoundation.org/infra/admin/repos/releng/docs-conf
 [gerrit-to-platform]: https://gerrit.linuxfoundation.org/infra/admin/repos/releng/gerrit_to_platform
+[github-code-monkey]: https://github.com/lfreleng-actions/github-code-monkey
 [lftools-uv]: https://github.com/lfreleng-actions/lftools-uv
 [markdown-table-fixer]: https://github.com/lfreleng-actions/markdown-table-fixer
 [pull-request-fixer]: https://github.com/lfreleng-actions/pull-request-fixer
