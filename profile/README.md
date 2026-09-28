@@ -41,6 +41,7 @@ with signed tags and provenance attestations.
 | [go-test-action]              | Run Go tests with coverage and race detection support            |
 | [go-audit-action]             | Audit a Go project with govulncheck, gosec, and staticcheck      |
 | [docker-build-matrix-action]  | Resolve Docker images to build, with their names and build order |
+| [docker-build-images-action]  | Build Docker images in order, then load or push them             |
 | [sbom-action]                 | Generate CycloneDX SBOM reports for any language ecosystem       |
 | [cbom-action]                 | Generate CycloneDX Cryptography Bill of Materials (CBOM) reports |
 | [make-action]                 | Execute the steps described in a Makefile                        |
@@ -60,6 +61,8 @@ with signed tags and provenance attestations.
 | [release-assets-action]          | Upload build artefacts and assets to a GitHub release       |
 | [nexus-publish-action]           | Publish content to Sonatype Nexus Repository servers        |
 | [nexus-docker-login-action]      | Docker login for all registries in Nexus3 and DockerHub     |
+| [docker-release-detect-action]   | Parse merged container release files into a promotion plan  |
+| [docker-promote-action]          | Copy staged Docker images to release tags without a rebuild |
 | [helm-chart-publish-action]      | Publish Helm Charts to an OCI container repository          |
 | [chartmuseum-action]             | Start and run a ChartMuseum Helm Chart repository           |
 | [central-publish-action]         | Publish Maven artefacts to the Maven Central Portal         |
@@ -68,6 +71,7 @@ with signed tags and provenance attestations.
 | [nexus-staging-action]           | Manage the Sonatype Nexus staging repository lifecycle      |
 | [node-create-npmrc-action]       | Create an NPM configuration file containing credentials     |
 | [node-publish-action]            | Stamp a version and publish a Node.js package to a registry |
+| [rust-crate-publish-action]      | Package, verify, and publish a Rust crate to crates.io      |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -242,6 +246,7 @@ verify the actions and workflows in this organisation:
 | [test-node-project]            | Sample Node.js project (Express HTTP server)           |
 | [test-maven-project]           | Sample Maven project used for testing actions          |
 | [test-gradle-project]          | Sample Gradle project used for testing actions         |
+| [test-rust-project]            | Sample Rust project used for testing actions           |
 | [test-docker-project]          | Sample project that builds a Docker image              |
 | [test-docker-monorepo]         | Multi-image Docker monorepo with same-repo FROM chains |
 | [test-makefile-helm-chart]     | Template Makefile for building a sample Helm Chart     |
@@ -405,6 +410,7 @@ to all repositories unless otherwise stated.
 [go-test-action]: https://github.com/lfreleng-actions/go-test-action
 [go-audit-action]: https://github.com/lfreleng-actions/go-audit-action
 [docker-build-matrix-action]: https://github.com/lfreleng-actions/docker-build-matrix-action
+[docker-build-images-action]: https://github.com/lfreleng-actions/docker-build-images-action
 [sbom-action]: https://github.com/lfreleng-actions/sbom-action
 [cbom-action]: https://github.com/lfreleng-actions/cbom-action
 [make-action]: https://github.com/lfreleng-actions/make-action
@@ -417,6 +423,8 @@ to all repositories unless otherwise stated.
 [release-assets-action]: https://github.com/lfreleng-actions/release-assets-action
 [nexus-publish-action]: https://github.com/lfreleng-actions/nexus-publish-action
 [nexus-docker-login-action]: https://github.com/lfreleng-actions/nexus-docker-login-action
+[docker-release-detect-action]: https://github.com/lfreleng-actions/docker-release-detect-action
+[docker-promote-action]: https://github.com/lfreleng-actions/docker-promote-action
 [helm-chart-publish-action]: https://github.com/lfreleng-actions/helm-chart-publish-action
 [chartmuseum-action]: https://github.com/lfreleng-actions/chartmuseum-action
 [central-publish-action]: https://github.com/lfreleng-actions/central-publish-action
@@ -425,6 +433,7 @@ to all repositories unless otherwise stated.
 [nexus-staging-action]: https://github.com/lfreleng-actions/nexus-staging-action
 [node-create-npmrc-action]: https://github.com/lfreleng-actions/node-create-npmrc-action
 [node-publish-action]: https://github.com/lfreleng-actions/node-publish-action
+[rust-crate-publish-action]: https://github.com/lfreleng-actions/rust-crate-publish-action
 
 <!-- Cloud & Infrastructure Actions -->
 [packer-build-action]: https://github.com/lfreleng-actions/packer-build-action
@@ -523,6 +532,7 @@ to all repositories unless otherwise stated.
 [test-node-project]: https://github.com/lfreleng-actions/test-node-project
 [test-maven-project]: https://github.com/lfreleng-actions/test-maven-project
 [test-gradle-project]: https://github.com/lfreleng-actions/test-gradle-project
+[test-rust-project]: https://github.com/lfreleng-actions/test-rust-project
 [test-docker-project]: https://github.com/lfreleng-actions/test-docker-project
 [test-docker-monorepo]: https://github.com/lfreleng-actions/test-docker-monorepo
 [test-makefile-helm-chart]: https://github.com/lfreleng-actions/test-makefile-helm-chart
