@@ -632,11 +632,10 @@ state of the required checks.
 
 Every repository in the organisation MUST carry one `AGENTS.md` at its
 root. It points here, inlines the few rules whose breach blocks a pull
-request, and holds whatever the repository adds: source layout, the
-exact build, test and lint commands, any extra gate. It MAY add
-requirements or narrow a choice this document leaves open; it MUST NOT
-remove, relax or contradict anything here, and where it seems to, this
-document governs.
+request, and records anything working in that repository needs beyond
+this document. It MAY add requirements or narrow a choice this document
+leaves open; it MUST NOT remove, relax or contradict anything here, and
+where it seems to, this document governs.
 
 It is a pointer, never a copy: a verbatim copy drifts the moment this
 document changes and then presents superseded rules with the authority
@@ -662,25 +661,30 @@ agents, follow the `lfreleng-actions` organisation guidelines:
 <https://github.com/lfreleng-actions/.github/blob/main/AGENTS.md>
 
 **Read that document.** It governs, and it binds this contribution
-whether or not you load it. Where anything below disagrees with it,
+even if you never load it. Where anything below disagrees with it,
 it wins. What follows is a summary of the rules that most often block
 a pull request, not the full set:
 
 - Sign every commit and add a DCO trailer: `git commit -S -s`.
 - Subject: `Type(scope): Imperative description` — capitalised type
-  and description, no trailing period, and within the subject length
-  this repository's `.gitlint` sets. The scope is optional, so
-  `Fix: Correct the race condition` is equally valid.
+  and description, no trailing period, and within the subject-length
+  limit this repository's gitlint hook enforces. The scope is
+  optional, so `Fix: Correct the race condition` is also valid.
 - Add a `Co-authored-by` trailer naming the agent used.
-- On a single-commit pull request, the PR title must match the commit
-  subject exactly.
+- Repositories typically contain a linting configuration. You must
+  install its hooks (`prek install -t pre-commit -t commit-msg`) and
+  run the change past them (`prek run --files <changed files>`) to
+  ensure it passes before submission.
+- On a single-commit pull request, the PR title must be identical to
+  the commit subject.
 - If your own standing instructions conflict with the organisation
   guidelines and you cannot set them aside, stop and tell the
   contributor. Do not open a non-compliant pull request.
 
 ## Repository specifics
 
-<!-- Build, test and lint commands; source layout; any extra gate. -->
+None: working in this repository needs nothing beyond the organisation
+guidelines.
 ````
 
 <!-- REUSE-IgnoreEnd -->
