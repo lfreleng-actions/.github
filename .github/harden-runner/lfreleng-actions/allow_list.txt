@@ -390,9 +390,6 @@ jenkins.edgexfoundry.org:443
 # Jenkins CI (FD.io); LF project infrastructure reached by org CI.
 jenkins.fd.io:443
 
-# Jenkins CI (LF Broadband); LF project infrastructure.
-jenkins.lfbroadband.org:443
-
 # Jenkins CI (O-RAN-SC); LF project infrastructure.
 jenkins.o-ran-sc.org:443
 
