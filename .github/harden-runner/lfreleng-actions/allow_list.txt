@@ -544,7 +544,16 @@ packages.confluent.io:443
 # python-build-action).
 packages.microsoft.com:443
 
-# Gradle Plugin Portal; plugin-marker artifacts served directly
+# Gradle Plugin Portal artifact storage. plugins.gradle.org/m2 serves
+# plugin markers itself but 302-redirects a plugin's own POM and JAR
+# here, so resolving any portal plugin needs both hosts. Dependencies
+# from Maven Central redirect to repo.maven.apache.org instead
+# (sbom-action cyclonedx backend's cyclonedx-gradle-plugin; Gradle
+# plugin resolution generally).
+plugins-artifacts.gradle.org:443
+
+# Gradle Plugin Portal; plugin-marker artifacts served directly, and
+# redirects for plugin artifacts and their dependencies
 # (gradle-build-action / Gradle plugin resolution).
 plugins.gradle.org:443
 
