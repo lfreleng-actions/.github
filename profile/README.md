@@ -186,6 +186,7 @@ with signed tags and provenance attestations.
 | [file-grep-regex-action]       | Extract a string from a file using grep and a regular expression   |
 | [file-sed-regex-action]        | Perform string substitutions in a file using sed                   |
 | [json-key-value-lookup-action] | Look up a value in a JSON key/value table                          |
+| [vars-to-env-action]           | Export GitHub variables or secrets as job environment variables    |
 | [url-download-action]          | Download content from a URL using wget                             |
 | [url-validity-action]          | Check a URL for a valid server response                            |
 | [verify-release-schema-action] | Verify release file contents against an approved schema            |
@@ -227,7 +228,23 @@ configurations that projects can call directly:
 | [generic-workflows]    | Language-agnostic reusable workflows, including tag-driven release      |
 | [security-workflows]   | Security and code auditing focussed reusable workflows                  |
 | [docs-workflows]       | Reusable documentation verify, build, and publish workflows             |
-| [github-issues-triage] | Reusable AI triage workflow that labels open GitHub issues              |
+
+<!-- markdownlint-enable MD013 -->
+
+## 🤖 Bots
+
+These repositories run scheduled AI agents across the organisation.
+Each is a reusable workflow built from [bots-template]: an untrusted
+job runs a Copilot CLI agent session, and only a trusted job, acting
+as a dedicated GitHub App, writes to GitHub.
+
+<!-- markdownlint-disable MD013 -->
+
+| Bot                        | Description                                                    |
+| -------------------------- | -------------------------------------------------------------- |
+| [github-issues-triage-bot] | Triage open GitHub issues, setting labels, priority, and type  |
+| [github-code-monkey-bot]   | Raise pull requests addressing open issues with Copilot        |
+| [github-code-review-bot]   | Review pull requests with Copilot and approve low-risk changes |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -266,6 +283,7 @@ verify the actions and workflows in this organisation:
 | --------------------------- | ------------------------------------------------------------------------------------------------------ |
 | [actions-template]          | Template repository for creating new GitHub Actions                                                    |
 | [workflows-template]        | Template repository for creating reusable workflow repositories                                        |
+| [bots-template]             | Template repository for creating Copilot-driven GitHub bots                                            |
 | [.github]                   | Organisation-wide configuration (default community health files, shared release-drafter configuration) |
 | [releng-reusable-workflows] | Shared/common workflows leveraging these actions (hosted in the [lfit](https://github.com/lfit) org)   |
 
@@ -280,7 +298,6 @@ verify the actions and workflows in this organisation:
 | [dependamerge]         | Bulk merge/close pull requests and Gerrit changes across an org  |
 | [docs-conf]            | Sphinx build configuration for Release Engineering documentation |
 | [gerrit-to-platform]   | Gerrit hooks to allow using GitHub and GitLab as CI platforms    |
-| [github-code-monkey]   | Raise pull requests addressing open issues with Copilot          |
 | [lftools-uv]           | Release Engineering management tooling/utilities (Python)        |
 | [markdown-table-fixer] | Fix markdown table formatting as a CLI tool or pre-commit hook   |
 | [pull-request-fixer]   | Fix pull request titles, bodies, and files across a GitHub org   |
@@ -499,6 +516,7 @@ to all repositories unless otherwise stated.
 [file-grep-regex-action]: https://github.com/lfreleng-actions/file-grep-regex-action
 [file-sed-regex-action]: https://github.com/lfreleng-actions/file-sed-regex-action
 [json-key-value-lookup-action]: https://github.com/lfreleng-actions/json-key-value-lookup-action
+[vars-to-env-action]: https://github.com/lfreleng-actions/vars-to-env-action
 [url-download-action]: https://github.com/lfreleng-actions/url-download-action
 [url-validity-action]: https://github.com/lfreleng-actions/url-validity-action
 [verify-release-schema-action]: https://github.com/lfreleng-actions/verify-release-schema-action
@@ -523,7 +541,11 @@ to all repositories unless otherwise stated.
 [generic-workflows]: https://github.com/lfreleng-actions/generic-workflows
 [security-workflows]: https://github.com/lfreleng-actions/security-workflows
 [docs-workflows]: https://github.com/lfreleng-actions/docs-workflows
-[github-issues-triage]: https://github.com/lfreleng-actions/github-issues-triage
+
+<!-- Bots -->
+[github-issues-triage-bot]: https://github.com/lfreleng-actions/github-issues-triage-bot
+[github-code-monkey-bot]: https://github.com/lfreleng-actions/github-code-monkey-bot
+[github-code-review-bot]: https://github.com/lfreleng-actions/github-code-review-bot
 
 <!-- Test Fixtures & Sample Projects -->
 [test-python-project]: https://github.com/lfreleng-actions/test-python-project
@@ -545,6 +567,7 @@ to all repositories unless otherwise stated.
 <!-- Organisation Resources -->
 [actions-template]: https://github.com/lfreleng-actions/actions-template
 [workflows-template]: https://github.com/lfreleng-actions/workflows-template
+[bots-template]: https://github.com/lfreleng-actions/bots-template
 [.github]: https://github.com/lfreleng-actions/.github
 [releng-reusable-workflows]: https://github.com/lfit/releng-reusable-workflows
 
@@ -552,7 +575,6 @@ to all repositories unless otherwise stated.
 [dependamerge]: https://github.com/lfreleng-actions/dependamerge
 [docs-conf]: https://gerrit.linuxfoundation.org/infra/admin/repos/releng/docs-conf
 [gerrit-to-platform]: https://gerrit.linuxfoundation.org/infra/admin/repos/releng/gerrit_to_platform
-[github-code-monkey]: https://github.com/lfreleng-actions/github-code-monkey
 [lftools-uv]: https://github.com/lfreleng-actions/lftools-uv
 [markdown-table-fixer]: https://github.com/lfreleng-actions/markdown-table-fixer
 [pull-request-fixer]: https://github.com/lfreleng-actions/pull-request-fixer
