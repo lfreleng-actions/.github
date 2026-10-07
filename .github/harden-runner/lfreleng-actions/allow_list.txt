@@ -251,6 +251,12 @@ docs.zowe.org:443
 # Sonatype Lifecycle lane.
 download.sonatype.com:443
 
+# Gradle checksum downloads (Gradle Wrapper, gradle/actions/setup-gradle
+# wrapper validation, via gradle-build-action). services.gradle.org
+# 301-redirects every *.sha256 here, wrapper-jar checksums included,
+# and serves the file without a further hop.
+downloads.gradle.org:443
+
 # endoflife.date API, queried by build-metadata-action for runtime
 # end-of-life data.
 endoflife.date:443
@@ -611,8 +617,9 @@ repository.hazelcast.com:443
 s3-logs.fd.io:443
 
 # Gradle distribution and wrapper checksums (Gradle Wrapper,
-# gradle/actions/setup-gradle). Distribution downloads 302-redirect
-# to release-assets.githubusercontent.com.
+# gradle/actions/setup-gradle). Distribution downloads 307-redirect
+# to github.com, then 302 to release-assets.githubusercontent.com;
+# checksum files 301-redirect to downloads.gradle.org.
 services.gradle.org:443
 
 # Sigul signing bridge for the legacy (sigul 0.207) infrastructure in
