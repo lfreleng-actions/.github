@@ -40,6 +40,9 @@ with signed tags and provenance attestations.
 | [go-build-action]             | Build a Go project with optional cross-compilation support       |
 | [go-test-action]              | Run Go tests with coverage and race detection support            |
 | [go-audit-action]             | Audit a Go project with govulncheck, gosec, and staticcheck      |
+| [rust-build-action]           | Build a Rust project with Cargo                                  |
+| [rust-test-action]            | Test a Rust project and generate coverage reports                |
+| [rust-audit-action]           | Audit Rust dependencies for known security vulnerabilities       |
 | [docker-build-matrix-action]  | Resolve Docker images to build, with their names and build order |
 | [docker-build-images-action]  | Build Docker images in order, then load or push them             |
 | [sbom-action]                 | Generate CycloneDX SBOM reports for any language ecosystem       |
@@ -224,6 +227,7 @@ configurations that projects can call directly:
 | [go-workflows]         | Reusable build, test, and release workflows for Go projects             |
 | [node-workflows]       | Reusable build, test, audit, and release workflows for Node.js projects |
 | [java-workflows]       | Reusable build, test, and release workflows for Java projects           |
+| [rust-workflows]       | Reusable build, test, and release workflows for Rust projects           |
 | [docker-workflows]     | Reusable build and publish workflows for Docker container images        |
 | [generic-workflows]    | Language-agnostic reusable workflows, including tag-driven release      |
 | [security-workflows]   | Security and code auditing focussed reusable workflows                  |
@@ -426,6 +430,9 @@ to all repositories unless otherwise stated.
 [go-build-action]: https://github.com/lfreleng-actions/go-build-action
 [go-test-action]: https://github.com/lfreleng-actions/go-test-action
 [go-audit-action]: https://github.com/lfreleng-actions/go-audit-action
+[rust-build-action]: https://github.com/lfreleng-actions/rust-build-action
+[rust-test-action]: https://github.com/lfreleng-actions/rust-test-action
+[rust-audit-action]: https://github.com/lfreleng-actions/rust-audit-action
 [docker-build-matrix-action]: https://github.com/lfreleng-actions/docker-build-matrix-action
 [docker-build-images-action]: https://github.com/lfreleng-actions/docker-build-images-action
 [sbom-action]: https://github.com/lfreleng-actions/sbom-action
@@ -537,6 +544,7 @@ to all repositories unless otherwise stated.
 [go-workflows]: https://github.com/lfreleng-actions/go-workflows
 [node-workflows]: https://github.com/lfreleng-actions/node-workflows
 [java-workflows]: https://github.com/lfreleng-actions/java-workflows
+[rust-workflows]: https://github.com/lfreleng-actions/rust-workflows
 [docker-workflows]: https://github.com/lfreleng-actions/docker-workflows
 [generic-workflows]: https://github.com/lfreleng-actions/generic-workflows
 [security-workflows]: https://github.com/lfreleng-actions/security-workflows
