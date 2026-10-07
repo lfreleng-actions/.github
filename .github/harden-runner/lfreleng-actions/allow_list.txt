@@ -615,6 +615,25 @@ s3-logs.fd.io:443
 # to release-assets.githubusercontent.com.
 services.gradle.org:443
 
+# Sigul signing bridge for the legacy (sigul 0.207) infrastructure in
+# AWS us-west-2; O-RAN-SC and DENT sign releases through it. A CNAME
+# to an ELB whose addresses rotate, so allow the name, never an IP.
+# 44334 is the bridge's client port. A client reaches the Sigul
+# server only through the bridge, so the server needs no entry
+# (sigul-sign-action).
+sigul-bridge-us-west-2.linuxfoundation.org:44334
+
+# Sigul signing bridge for the legacy (sigul 0.207) infrastructure in
+# Vexxhost YUL; ONAP, OpenDaylight and EdgeX sign releases through
+# it. Client port, as above (sigul-sign-action).
+sigul-bridge-yul.linuxfoundation.org:44334
+
+# Sigul signing bridge for OpenSearch, on the containerised sigul 1.4
+# stack deployed from lfreleng-actions/sigul-docker-k8s. Its
+# internet-facing NLB exposes only the client port, and mutual TLS
+# gates every connection (sigul-sign-action).
+sigul-bridge.opensearch.org:44334
+
 # Slack API; slackapi/slack-github-action notifications.
 slack.com:443
 
