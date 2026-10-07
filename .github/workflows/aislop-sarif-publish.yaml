@@ -57,7 +57,7 @@ on:
         default: ''
       repo:
         # yamllint disable-line rule:line-length
-        description: 'Scan only this repository (name only) if in scope; blank scans all'
+        description: 'Scan only these repositories (names only, comma or space separated) if in scope; blank scans all'
         required: false
         default: ''
       token:

@@ -70,7 +70,7 @@ on:
         default: ''
       repo:
         # yamllint disable-line rule:line-length
-        description: 'Sweep only this repository (name only) if in scope; blank sweeps all'
+        description: 'Sweep only these repositories (names only, comma or space separated) if in scope; blank sweeps all'
         required: false
         default: ''
       extra-include:
