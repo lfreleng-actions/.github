@@ -70,6 +70,24 @@ StepSecurity run data; hand-written notes cover endpoints that data
 cannot observe, such as harden-runner's own control-plane API. Correct
 or extend a comment whenever you touch an entry.
 
+## Every hostname must resolve
+
+Before enabling block mode, harden-runner resolves every non-wildcard
+entry. If any one fails to resolve to an A record, it reverts and the
+job runs with no egress filtering at all, while still reporting
+success. So remove or correct an entry once its host goes away, rather
+than leaving it in place as harmless.
+
+Two safeguards back this up:
+
+- [harden-runner-block-action][block] checks each hostname first and,
+  by default, drops any that no longer resolve before harden-runner
+  sees them (`invalid_records: filter`).
+- The daily [`allow-list-dns-check.yaml`][dns-check] workflow checks
+  this list on the default branch and at the latest release, and posts
+  any hostname that no longer resolves to `#releng-scm`.
+
 [hr]: https://github.com/step-security/harden-runner
 [block]: https://github.com/lfreleng-actions/harden-runner-block-action
 [audit]: https://github.com/lfreleng-actions/github-network-audit
+[dns-check]: ../workflows/allow-list-dns-check.yaml
