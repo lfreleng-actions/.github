@@ -1,0 +1,434 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Daily DNS check of the harden-runner egress allow-list.
+#
+# step-security/harden-runner resolves every non-wildcard allowed
+# endpoint before it enables block mode (wildcards are never
+# pre-resolved), and if any one fails to resolve it reverts and leaves
+# the job with no egress filtering at all. A hostname that has since
+# been retired therefore disables block mode for every consumer of the
+# list. harden-runner-block-action filters such entries out at run
+# time (invalid_records: filter), but the list should not carry them
+# in the first place: this workflow finds them so they can be removed
+# or corrected. Like harden-runner, it skips wildcard entries.
+#
+# Every day it checks the allow-list at two refs of this repository:
+#
+#   - the default branch, which the next release will carry, and
+#   - the latest release, which consumers pin, but only when it points
+#     at a different commit, since otherwise the check would repeat.
+#
+# Each check runs harden-runner-block-action itself, in its default
+# 'filter' mode, and reads the invalid_records / invalid_count outputs;
+# the resolver is the one consumers run, not a copy. When any record
+# fails to resolve, or a check cannot run at all, a Slack message lists
+# them. A manual run can force a labelled test message to verify the
+# Slack wiring.
+#
+# harden-runner runs in 'audit' mode throughout. These jobs exist to
+# report problems with the allow-list, so they must not depend on that
+# allow-list being sound.
+
+name: 'Allow-List DNS Check 🔎'
+
+# yamllint disable-line rule:truthy
+on:
+  schedule:
+    # Daily at 04:30 UTC.
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+    inputs:
+      test_notification:
+        description: 'Send a Slack test message even when every record resolves'
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: 'allow-list-dns-check'
+  cancel-in-progress: true
+
+env:
+  # gh would otherwise post usage events to cafe.github.com.
+  GH_TELEMETRY: 'false'
+
+jobs:
+  refs:
+    name: 'Resolve refs to check'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      main_sha: '${{ steps.refs.outputs.main_sha }}'
+      tag: '${{ steps.refs.outputs.tag }}'
+      tag_sha: '${{ steps.refs.outputs.tag_sha }}'
+      check_tag: '${{ steps.refs.outputs.check_tag }}'
+    steps:
+      - name: 'Harden runner (audit)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
+        with:
+          egress-policy: 'audit'
+
+      - name: 'Resolve the default branch and latest release'
+        id: 'refs'
+        shell: bash
+        env:
+          GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+          REPO: '${{ github.repository }}'
+          BRANCH: '${{ github.event.repository.default_branch }}'
+        run: |
+          # Resolve the default branch and latest release
+          set -euo pipefail
+          sha_re='^[0-9a-f]{40}$'
+
+          # The commits endpoint peels annotated tags, so both values
+          # are commit SHAs, which is what the config coordinate pins.
+          main_sha="$(gh api "repos/${REPO}/commits/${BRANCH}" --jq '.sha')"
+          if [[ ! "${main_sha}" =~ ${sha_re} ]]; then
+            echo "::error::Could not resolve ${BRANCH} to a commit SHA"
+            exit 1
+          fi
+
+          tag=''
+          if latest="$(gh api "repos/${REPO}/releases/latest" \
+            --jq '.tag_name' 2>/dev/null)"; then
+            tag="${latest}"
+          else
+            # /releases/latest answers 404 both when there is no
+            # published release and when the API itself is failing.
+            # Only the first means "nothing to check"; anything else
+            # must fail this job, so notify reports a check that did
+            # not run instead of quietly skipping the release.
+            published="$(gh api "repos/${REPO}/releases" --jq \
+              '[.[] | select((.draft or .prerelease) | not)] | length')"
+            if [ "${published}" != '0' ]; then
+              echo "::error::Could not read the latest release of ${REPO}"
+              exit 1
+            fi
+          fi
+          tag_sha=''
+          check_tag='false'
+          if [ -z "${tag}" ]; then
+            echo "No release yet; checking ${BRANCH} alone"
+          else
+            tag_sha="$(gh api "repos/${REPO}/commits/${tag}" --jq '.sha')"
+            if [[ ! "${tag_sha}" =~ ${sha_re} ]]; then
+              echo "::error::Could not resolve ${tag} to a commit SHA"
+              exit 1
+            fi
+            if [ "${tag_sha}" = "${main_sha}" ]; then
+              echo "${tag} is ${BRANCH} (${main_sha}); checking once"
+            else
+              check_tag='true'
+            fi
+          fi
+
+          {
+            echo "main_sha=${main_sha}"
+            echo "tag=${tag}"
+            echo "tag_sha=${tag_sha}"
+            echo "check_tag=${check_tag}"
+          } >> "$GITHUB_OUTPUT"
+          echo "${BRANCH}: ${main_sha}; latest release: ${tag:-none}" \
+            "${tag_sha:+(${tag_sha})}; check release: ${check_tag}"
+
+  # Two jobs rather than a matrix: each needs its own outputs, and the
+  # release check must be skipped as a whole job when it would repeat
+  # the default-branch check, since the action does its work in a pre
+  # hook that runs ahead of any step-level condition.
+  check-main:
+    name: 'Check default branch'
+    needs: 'refs'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      invalid_records: '${{ steps.check.outputs.invalid_records }}'
+      invalid_count: '${{ steps.check.outputs.invalid_count }}'
+      indeterminate_records: '${{ steps.check.outputs.indeterminate_records }}'
+    steps:
+      - name: 'Harden runner (audit)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
+        with:
+          egress-policy: 'audit'
+
+      - name: 'Check allow-list DNS records'
+        id: 'check'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/harden-runner-block-action@51ef68401547a8b648275129b9a21544612596d5  # v0.13.1
+        with:
+          # yamllint disable-line rule:line-length
+          config: '${{ github.repository_owner }}@${{ needs.refs.outputs.main_sha }}'
+          invalid_records: 'filter'
+
+  check-tag:
+    name: 'Check latest release'
+    needs: 'refs'
+    if: needs.refs.outputs.check_tag == 'true'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      invalid_records: '${{ steps.check.outputs.invalid_records }}'
+      invalid_count: '${{ steps.check.outputs.invalid_count }}'
+      indeterminate_records: '${{ steps.check.outputs.indeterminate_records }}'
+    steps:
+      - name: 'Harden runner (audit)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
+        with:
+          egress-policy: 'audit'
+
+      - name: 'Check allow-list DNS records'
+        id: 'check'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/harden-runner-block-action@51ef68401547a8b648275129b9a21544612596d5  # v0.13.1
+        with:
+          # yamllint disable-line rule:line-length
+          config: '${{ github.repository_owner }}@${{ needs.refs.outputs.tag_sha }}'
+          invalid_records: 'filter'
+
+  notify:
+    name: 'Report and notify Slack'
+    needs: ['refs', 'check-main', 'check-tag']
+    if: ${{ always() }}
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    # The Slack bot token is environment-scoped; running here satisfies
+    # zizmor's secrets-outside-env audit.
+    environment: 'production'
+    permissions: {}
+    steps:
+      - name: 'Harden runner (audit)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
+        with:
+          egress-policy: 'audit'
+
+      - name: 'Build report'
+        id: 'report'
+        shell: bash
+        env:
+          SERVER: '${{ github.server_url }}'
+          REPO_SLUG: '${{ github.repository }}'
+          RUN_ID: '${{ github.run_id }}'
+          BRANCH: '${{ github.event.repository.default_branch }}'
+          TEST_NOTIFY: '${{ inputs.test_notification }}'
+          REFS_RESULT: '${{ needs.refs.result }}'
+          MAIN_SHA: '${{ needs.refs.outputs.main_sha }}'
+          TAG: '${{ needs.refs.outputs.tag }}'
+          TAG_SHA: '${{ needs.refs.outputs.tag_sha }}'
+          MAIN_RESULT: '${{ needs.check-main.result }}'
+          MAIN_INVALID: '${{ needs.check-main.outputs.invalid_records }}'
+          # yamllint disable-line rule:line-length
+          MAIN_INDETERMINATE: '${{ needs.check-main.outputs.indeterminate_records }}'
+          TAG_RESULT: '${{ needs.check-tag.result }}'
+          TAG_INVALID: '${{ needs.check-tag.outputs.invalid_records }}'
+          # yamllint disable-line rule:line-length
+          TAG_INDETERMINATE: '${{ needs.check-tag.outputs.indeterminate_records }}'
+        run: |
+          # Build report
+          set -euo pipefail
+          run_url="${SERVER}/${REPO_SLUG}/actions/runs/${RUN_ID}"
+          slack=''      # Slack mrkdwn, with literal \n line breaks
+          failures=0
+          undecided=0   # entries that reached no DNS verdict
+          declare -A unique=()
+
+          {
+            echo '## 🔎 Allow-list DNS check'
+            echo ''
+            echo '| Ref | Commit | Result |'
+            echo '| --- | ------ | ------ |'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # report <label> <sha> <job result> <invalid> <indeterminate>
+          report() {
+            local label="$1" sha="$2" result="$3" invalid="$4" maybe="$5"
+            local short="${sha:0:7}" count
+            case "${result}" in
+              success)
+                read -r -a records <<< "${invalid}"
+                read -r -a pending <<< "${maybe}"
+                count="${#records[@]}"
+                undecided=$((undecided + ${#pending[@]}))
+                if [ "${count}" -eq 0 ] && [ "${#pending[@]}" -eq 0 ]; then
+                  echo "| \`${label}\` | \`${short}\` | ✅ all resolve |" \
+                    >> "$GITHUB_STEP_SUMMARY"
+                fi
+                if [ "${count}" -gt 0 ]; then
+                  echo "| \`${label}\` | \`${short}\` | ❌ ${count} invalid:" \
+                    "\`${invalid}\` |" >> "$GITHUB_STEP_SUMMARY"
+                  slack="${slack}*\`${label}\`* (\`${short}\`): ${count}"
+                  slack="${slack} invalid\\n"
+                  for r in "${records[@]}"; do
+                    slack="${slack}• \`${r}\`\\n"
+                    unique["${r}"]=1
+                  done
+                fi
+                if [ -n "${maybe}" ]; then
+                  echo "| \`${label}\` | \`${short}\` | ⚠️ no verdict" \
+                    "(transient?): \`${maybe}\` |" >> "$GITHUB_STEP_SUMMARY"
+                fi
+                ;;
+              skipped)
+                echo "| \`${label}\` | \`${short}\` | ➖ same commit as" \
+                  "\`${BRANCH}\`; not repeated |" >> "$GITHUB_STEP_SUMMARY"
+                ;;
+              *)
+                failures=$((failures + 1))
+                echo "| \`${label}\` | \`${short:-?}\` | ⚠️ check did not" \
+                  "complete (${result}) |" >> "$GITHUB_STEP_SUMMARY"
+                slack="${slack}*\`${label}\`*: :warning: the check did not"
+                slack="${slack} complete (${result}); see the run\\n"
+                ;;
+            esac
+          }
+
+          if [ "${REFS_RESULT}" != 'success' ]; then
+            failures=$((failures + 1))
+            echo "| (refs) | | ⚠️ could not resolve refs:" \
+              "${REFS_RESULT} |" >> "$GITHUB_STEP_SUMMARY"
+            slack=':warning: Could not resolve the refs to check;'
+            slack="${slack} no allow-list was checked.\\n"
+          else
+            report "${BRANCH}" "${MAIN_SHA}" "${MAIN_RESULT}" \
+              "${MAIN_INVALID}" "${MAIN_INDETERMINATE}"
+            if [ -n "${TAG}" ]; then
+              report "${TAG}" "${TAG_SHA}" "${TAG_RESULT}" \
+                "${TAG_INVALID}" "${TAG_INDETERMINATE}"
+            fi
+          fi
+
+          total="${#unique[@]}"
+          notify='false'
+          if [ "${total}" -gt 0 ] || [ "${failures}" -gt 0 ]; then
+            notify='true'
+          fi
+          # Slack rejects a section whose text exceeds 3,000 characters,
+          # and a mass DNS failure would lose the alert exactly when it
+          # matters. Cut at a line boundary well inside the limit (the
+          # count here is conservative: each literal '\n' becomes one
+          # character in Slack); the step summary keeps every record.
+          max_slack=2600
+          if [ "${#slack}" -gt "${max_slack}" ]; then
+            slack="${slack:0:${max_slack}}"
+            slack="${slack%\\n*}"
+            slack="${slack}\\n_… further records omitted; see the run"
+            slack="${slack} summary._\\n"
+          fi
+          # Entries without a verdict are usually transient (SERVFAIL,
+          # timeouts), so they are reported but do not notify alone.
+          # Wording below never claims more than "no invalid records".
+          undecided_note=''
+          if [ "${undecided}" -gt 0 ]; then
+            undecided_note="${undecided} lookup(s) reached no verdict,"
+            undecided_note="${undecided_note} probably transiently; see"
+            undecided_note="${undecided_note} the run summary."
+          fi
+
+          if [ "${total}" -gt 0 ]; then
+            headline="🔎 Allow-list DNS check: ${total} invalid record(s)"
+            detail="These entries no longer resolve to an A record."
+            detail="${detail} Consumers filter them at run time, but they"
+            detail="${detail} should be removed or corrected in"
+            detail="${detail} \`allow_list.txt\`. ${undecided_note}"
+          elif [ "${failures}" -gt 0 ]; then
+            headline='🔎 Allow-list DNS check could not complete'
+            detail='The check itself failed, so invalid records may have'
+            detail="${detail} gone unreported. ${undecided_note}"
+          elif [ "${TEST_NOTIFY:-false}" = 'true' ]; then
+            notify='true'
+            headline='🧪 Allow-list DNS check (test)'
+            detail='Slack wiring test: no invalid allow-list records'
+            detail="${detail} found. ${undecided_note}"
+            slack='No action needed.\n'
+          else
+            headline='🔎 Allow-list DNS check: no invalid records'
+            detail="${undecided_note}"
+          fi
+          detail="${detail% }"
+
+          {
+            echo ''
+            echo "**${headline}**"
+            if [ -n "${detail}" ]; then
+              echo ''
+              echo "${detail}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${total}" -gt 0 ]; then
+            echo "::warning title=Invalid allow-list records::${total}" \
+              "allow-list record(s) no longer resolve; see the summary"
+          fi
+
+          {
+            echo "notify=${notify}"
+            echo "headline=${headline}"
+            echo "detail=${detail}"
+            echo "lines=${slack}"
+            echo "run_url=${run_url}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 'Check Slack configuration'
+        id: 'slack-config'
+        if: steps.report.outputs.notify == 'true'
+        shell: bash
+        env:
+          SLACK_BOT_TOKEN: '${{ secrets.SLACK_BOT_TOKEN }}'
+          SLACK_CHANNEL_ID: '${{ vars.SLACK_CHANNEL_ID }}'
+        run: |
+          # Check Slack configuration
+          # Missing credentials disable the integration gracefully; the
+          # step summary and annotation still carry the result.
+          if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            msg="⚠️ Slack integration not available; requires token/credentials"
+            echo "::warning::${msg}"
+            echo "${msg}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 'Send Slack notification'
+        # yamllint disable-line rule:line-length
+        if: steps.report.outputs.notify == 'true' && steps.slack-config.outputs.configured == 'true'
+        # yamllint disable-line rule:line-length
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d  # v4.0.0
+        with:
+          method: 'chat.postMessage'
+          token: '${{ secrets.SLACK_BOT_TOKEN }}'
+          # yamllint disable rule:line-length
+          payload: |
+            channel: "${{ vars.SLACK_CHANNEL_ID }}"
+            text: "${{ steps.report.outputs.headline }} — ${{ github.repository }}"
+            blocks:
+              - type: "header"
+                text:
+                  type: "plain_text"
+                  text: "${{ steps.report.outputs.headline }}"
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: "*Repository:* <${{ github.server_url }}/${{ github.repository }}|${{ github.repository }}>"
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: "${{ steps.report.outputs.lines }}"
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: "${{ steps.report.outputs.detail }}"
+              - type: "context"
+                elements:
+                  - type: "mrkdwn"
+                    text: "<${{ steps.report.outputs.run_url }}|View workflow run>"
+          # yamllint enable rule:line-length

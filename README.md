@@ -73,6 +73,14 @@ level. Each entry below says how the rest reach repositories.
   `default:` keys rather than `uses:` references, so Dependabot cannot
   see them and they drift. See
   [Allow-list bump sweep](#allow-list-bump-sweep) below for setup.
+- **[`allow-list-dns-check.yaml`](.github/workflows/allow-list-dns-check.yaml)**
+  — A scheduled (daily, 04:30 UTC) check that every non-wildcard
+  hostname in the harden-runner egress allow-list still resolves, on
+  the default branch and at the latest release. harden-runner fails
+  open when any such entry fails to resolve (it never pre-resolves
+  wildcards, so neither does the check), so the workflow posts the
+  offending records to `#releng-scm` for removal or correction. A
+  manual run can send a test message to verify the Slack wiring.
 - **[`repo-audit.yaml`](.github/workflows/repo-audit.yaml)** — Runs on
   a weekly schedule (Monday 10:00 UTC). Compares the current list of
   repositories in the organisation against the profile README and sends a
@@ -832,12 +840,14 @@ repository name to the `excluded` array.
 
 ## Slack Setup
 
-The repository audit workflow and the scheduled zizmor / AI slop SARIF
-publishers send notifications using the official
+The repository audit workflow, the allow-list DNS check and the
+scheduled zizmor / AI slop SARIF publishers send notifications using
+the official
 [Slack GitHub Action](https://github.com/slackapi/slack-github-action).
-The publishers reuse the same `SLACK_BOT_TOKEN` secret and
-`SLACK_CHANNEL_ID` variable, and post to `#releng-scm` when a
-scheduled run fails. Complete the following one-time setup steps:
+They reuse the same `SLACK_BOT_TOKEN` secret and `SLACK_CHANNEL_ID`
+variable, and post to `#releng-scm`: the publishers when a scheduled
+run fails, and the DNS check when an allow-list record no longer
+resolves. Complete the following one-time setup steps:
 
 ### 1. Create a Slack App
 
