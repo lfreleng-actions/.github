@@ -75,6 +75,12 @@
 # note.
 *.centos.org:443
 
+# Codecov (cli, ingest): codecov/codecov-action downloads the
+# Codecov CLI from cli.codecov.io and the CLI uploads coverage
+# reports to ingest.codecov.io (e.g. the Test workflow in
+# tailscale-openstack-bastion-action).
+*.codecov.io:443
+
 # Debian package archives over apt (deb, security, ftp, snapshot);
 # container/base-image builds. Wildcarded, and on both ports,
 # because apt fails over between mirrors and Debian serves the
@@ -96,6 +102,16 @@
 # github-cloud): raw file fetches, LFS objects, release assets and
 # container layers.
 *.githubusercontent.com:443
+
+# Sentry event ingest, regional: the Codecov CLI reports its own
+# errors to Sentry (observed: o<org-id>.ingest.us.sentry.io). The
+# leading label is Codecov's Sentry organisation ID, which may
+# change, and a wildcard matches one label only, so each region's
+# ingest zone needs its own entry. 'de' is Sentry's EU (Frankfurt)
+# region; not yet observed, listed so a move there cannot break
+# coverage uploads.
+*.ingest.de.sentry.io:443
+*.ingest.us.sentry.io:443
 
 # openSUSE and SLES package hosts (download, cdn, provo-mirror).
 # download.opensuse.org runs MirrorBrain and redirects to
@@ -425,6 +441,10 @@ jira.opendaylight.org:443
 
 # Jira (Anuket/OPNFV); LF project issue tracker.
 jira.opnfv.org:443
+
+# Keybase: codecov/codecov-action fetches Codecov's PGP public key
+# from keybase.io to verify the signature of the downloaded CLI.
+keybase.io:443
 
 # OpenPGP keyserver; GPG public-key fetch via dirmngr during
 # package/signature verification.
