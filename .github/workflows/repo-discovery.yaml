@@ -22,7 +22,8 @@ on:
         required: true
         type: 'string'
       only-repo:
-        description: 'Restrict discovery to this repository (name only)'
+        # yamllint disable-line rule:line-length
+        description: 'Restrict discovery to these repositories (names only; comma, space, or newline separated)'
         required: false
         type: 'string'
         default: ''
@@ -163,6 +164,13 @@ jobs:
           mapfile -t exc_var < <(split_patterns "${EXTRA_EXCLUDE}")
           includes=("${inc_json[@]}" "${inc_var[@]}")
           excludes=("${exc_json[@]}" "${exc_var[@]}")
+          # Named repositories for a manual run, split like the patterns.
+          # A name repeated in any case is kept once, since a duplicate
+          # would collide in the caller's matrix. Input holding only
+          # separators names nothing, so it scans everything, as blank
+          # does.
+          mapfile -t only_repos < <(split_patterns "${ONLY_REPO}" \
+            | awk '!seen[tolower($0)]++')
 
           # Case-insensitive glob match of a name against any pattern.
           shopt -s nocasematch
@@ -180,14 +188,36 @@ jobs:
             return 1
           }
 
-          if [ -n "${ONLY_REPO}" ]; then
-            # Manual single-repo run: fetch just that repository as a
-            # single JSON object.
-            repos_json="$(gh api "/repos/${ORG}/${ONLY_REPO}" \
-              --jq '{repo: .name, default_branch: .default_branch,
-                     archived: .archived, fork: .fork,
-                     is_template: .is_template, disabled: .disabled,
-                     private: .private}')"
+          if [ "${#only_repos[@]}" -gt 0 ]; then
+            # Manual run against named repositories: fetch each one,
+            # emitting the same one-object-per-line stream as the
+            # organisation listing. Every bad name is reported before
+            # failing, so a list with several typos needs only one
+            # corrected re-run.
+            repos_json=''
+            lookup_failed=0
+            for repo in "${only_repos[@]}"; do
+              case "${repo}" in
+                . | .. | *[!A-Za-z0-9._-]*)
+                  msg="Invalid repository name '${repo}': give the"
+                  msg="${msg} name only, without the organisation"
+                  echo "::error::${msg}" >&2
+                  lookup_failed=1
+                  continue
+                  ;;
+              esac
+              if ! repo_json="$(gh api "/repos/${ORG}/${repo}" \
+                --jq '{repo: .name, default_branch: .default_branch,
+                       archived: .archived, fork: .fork,
+                       is_template: .is_template, disabled: .disabled,
+                       private: .private}')"; then
+                echo "::error::Cannot read repository ${ORG}/${repo}" >&2
+                lookup_failed=1
+                continue
+              fi
+              repos_json+="${repo_json}"$'\n'
+            done
+            [ "${lookup_failed}" -eq 0 ] || exit 1
           else
             # --paginate applies --jq to each page, so emit one object per
             # line (a JSON stream). Wrapping in an array would print one
@@ -227,6 +257,21 @@ jobs:
           done < <(printf '%s' "${repos_json}" | jq -r \
             '[.repo, .default_branch, .archived, .fork,
               .is_template, .disabled, .private] | @tsv')
+
+          # A named repository the scope policy removed would otherwise
+          # drop out of a list run without trace; name each one.
+          if [ "${#only_repos[@]}" -gt 0 ]; then
+            while IFS= read -r name; do
+              case $'\n'"${selected}" in
+                *$'\n'"${name}"$'\t'*) ;;
+                *)
+                  msg="Skipping ${name}: out of scope (scan toggles or"
+                  msg="${msg} include/exclude patterns)"
+                  echo "::warning::${msg}"
+                  ;;
+              esac
+            done < <(printf '%s' "${repos_json}" | jq -r '.repo')
+          fi
 
           matrix="$(printf '%s' "${selected}" | jq -R -s -c \
             'split("\n") | map(select(length > 0) | split("\t")

@@ -377,12 +377,16 @@ optional inputs (all blank by default):
   matches the scheduled run. The workflow reads that organisation's scope
   policy from `.github/scan-scope.json`; an organisation with no
   entry falls back to the default toggles and the scan variables alone.
-- **`repo`** — scan a single named repository (for smoke-testing). The
-  scope policy still applies, so the workflow produces an empty matrix —
-  publishing nothing — for any repository that the toggles or scope policy
-  remove (a skipped category such as archived, fork, template, private or
+- **`repo`** — restrict the run to the named repositories, for
+  smoke-testing or to refresh results for a batch of new repositories.
+  Give bare names, separated by commas or spaces
+  (`repo-a, repo-b repo-c`). The run fails, naming each culprit, when an
+  entry is not a bare repository name or the API cannot read the
+  repository. The scope policy still applies: the workflow drops, with a
+  warning, any named repository that the toggles or scope policy remove
+  (a skipped category such as archived, fork, template, private or
   disabled, an `exclude` match, or a repository outside a configured
-  `include` allow-list).
+  `include` allow-list), and publishes nothing when that leaves none.
 - **`token`** — override the `ZIZMOR_SARIF_PAT` secret for an ad-hoc run.
   When blank, the workflow uses the secret. **Caution:** GitHub stores and
   shows `workflow_dispatch` inputs in the run parameters without masking
