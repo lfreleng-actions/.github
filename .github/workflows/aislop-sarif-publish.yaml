@@ -147,7 +147,7 @@ jobs:
       - name: 'Run aislop scan (full repository)'
         id: 'scan'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/aislop-scan-action@d0884bcbfa2cb2087addca35b069e706831c6707  # v0.3.0
+        uses: lfreleng-actions/aislop-scan-action@2d0c48a326538bda2b602beab36784d517ea30e8  # v0.3.2
         with:
           scan-mode: 'full'
           # This workflow publishes results, it does not gate: the
