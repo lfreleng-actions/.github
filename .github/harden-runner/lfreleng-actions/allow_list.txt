@@ -625,6 +625,15 @@ releases.astral.sh:443
 # Maven Central (Apache); Java dependency downloads.
 repo.maven.apache.org:443
 
+# Yarn Berry (2+) release host: Corepack resolves the Yarn version
+# from /tags and downloads the single-file yarn.js bundle here, as
+# does 'yarn set version'. Reached the first time node-build-action,
+# node-audit-action, standalone-linting-action or node-workflows runs
+# 'yarn' (or 'corepack install') in a Yarn Berry project; 'corepack
+# enable' only installs the shims. pnpm and Yarn classic come from
+# the npm and Yarn registries instead.
+repo.yarnpkg.com:443
+
 # Maven Central (repo1); Java dependency downloads.
 repo1.maven.org:443
 
