@@ -37,6 +37,14 @@ level. Each entry below says how the rest reach repositories.
   other repositories may run, vendor or reimplement the scripts against
   them. `agent-scripts.yaml` runs the suite on every pull request that
   touches them.
+- **[`llms.txt`](llms.txt)** — The entry point for AI agents building
+  workflows, in [llmstxt.org](https://llmstxt.org/) format. It indexes
+  the action catalogue in [`profile/README.md`](profile/README.md) by
+  category, the reusable workflow repositories, and the workflow
+  conventions, linking to them rather than copying entries, so the
+  action list lives in one place. Maintainers edit it by hand: a new
+  catalogue category in `profile/README.md` needs a matching link in
+  `llms.txt`.
 
 ### Organisation Profile
 

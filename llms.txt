@@ -1,0 +1,66 @@
+# lfreleng-actions
+
+> The Linux Foundation Release Engineering GitHub organisation publishes
+> reusable GitHub Actions and reusable workflows for building, testing,
+> auditing and releasing projects. This `.github` repository holds the
+> organisation-wide configuration and the catalogue of everything the
+> organisation offers.
+
+This file is an index, not a copy. The catalogue in `profile/README.md`
+lists every action with a one-line description and stays current; the
+links below point into it by category.
+
+To find an action for a workflow:
+
+1. Pick the category below that matches the job.
+2. Open that catalogue section and choose an action from its table.
+3. Follow the link to the action repository and read its README and
+   `action.yaml` for inputs and outputs.
+4. Where a reusable workflow repository covers the whole job, prefer
+   calling it over assembling individual actions.
+5. Consume actions as `lfreleng-actions/<name>@<commit-sha> # vX.Y.Z`.
+
+## Catalogue
+
+- [Organisation profile and catalogue](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md): Full categorised directory of actions, workflows, bots, tools and fixtures
+- [Build & Test Actions](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#-build--test-actions): Build, test, audit and SBOM generation for Python, Java, Node.js, Go, Rust, Docker, Make and docs
+- [Publishing & Release Actions](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#-publishing--release-actions): Publish to PyPI, Maven Central, Nexus, npm, crates.io and OCI registries; promote GitHub releases and images
+- [Cloud & Infrastructure Actions](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#%EF%B8%8F-cloud--infrastructure-actions): Packer builds, OpenStack bastions over Tailscale and cloud resource clean-up
+- [Python Project Metadata Actions](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#-python-project-metadata-actions): Read and update Python project name, version, metadata and supported versions
+- [Tag & Version Validation Actions](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#%EF%B8%8F-tag--version-validation-actions): Validate SemVer/CalVer tags and signatures, verify tag pushes, extract and increment versions
+- [Gerrit Integration Actions](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#-gerrit-integration-actions): Mirror pull requests to Gerrit, check out changes, vote and run test Gerrit servers
+- [Security & Credentials Actions](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#-security--credentials-actions): Secrets retrieval, signing, vulnerability and workflow scanning, egress allow-lists
+- [Repository & Code Quality Actions](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#-repository--code-quality-actions): Repository and build metadata, linting, pinning checks, change detection and config audits
+- [Utility Actions](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#%EF%B8%8F-utility-actions): General helpers for git, files, JSON, URLs, variables, releases and local test services
+
+## Reusable workflows
+
+- [Workflow Repositories](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#-workflow-repositories): Reusable workflow repositories for Python, Go, Node.js, Java, Rust, Docker, generic release, security and docs
+- [Building GitHub Workflows](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#building-github-workflows): Using the actions with GitHub alone or with Gerrit, plus example workflows
+
+## Workflow conventions
+
+- [GitHub Actions pinning](https://github.com/lfreleng-actions/.github/blob/main/AGENTS.md#44-github-actions-pinning): Pin remote `uses:` to a full commit SHA; never floating tags or tag-object SHAs
+- [Harden-runner egress allow-list](https://github.com/lfreleng-actions/.github/blob/main/README.md#harden-runner-egress-allow-list): Run step-security/harden-runner with `egress-policy: block`, loading the organisation allow-list via harden-runner-block-action
+- [Egress allow-list file](https://github.com/lfreleng-actions/.github/blob/main/.github/harden-runner/lfreleng-actions/allow_list.txt): Hosts a job contacts must appear here or block mode denies the connection
+- [Workflow security audits](https://github.com/lfreleng-actions/.github/blob/main/AGENTS.md#45-workflow-security-audits): Audit workflow changes locally with zizmor, `auditor` persona, zero findings
+- [Organisation-wide zizmor audit](https://github.com/lfreleng-actions/.github/blob/main/README.md#organisation-wide-zizmor-audit): Organisation workflow auditing workflows with zizmor (`auditor` persona); advisory, findings land in code scanning
+- [Organisation-wide aislop scan](https://github.com/lfreleng-actions/.github/blob/main/README.md#organisation-wide-aislop-scan): Organisation workflow scanning the files a pull request changes; any finding fails the check, and blocks the merge where required
+- [PR title must match the commit subject](https://github.com/lfreleng-actions/.github/blob/main/AGENTS.md#101-pr-title-must-match-the-commit-subject): The mandatory Semantic Pull Request check; a single-commit PR title must equal its commit subject
+
+## Bots
+
+- [Bots](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#-bots): Scheduled Copilot-driven bots for issue triage, issue fixes and pull request review
+
+## Tools
+
+- [Tools](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#-tools): Command-line tools and libraries for release engineering work
+- [Reporting Tools](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#-reporting-tools): Multi-repository reporting, security reporting and egress allow-list generation
+
+## Optional
+
+- [Test Fixtures & Sample Projects](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#-test-fixtures--sample-projects): Sample projects and fixtures that exercise the actions and workflows
+- [Organisation Resources](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#-organisation-resources): Templates for new actions, workflow repositories and bots
+- [Organisation-wide configuration](https://github.com/lfreleng-actions/.github/blob/main/README.md): Shared configuration and the organisation-wide workflows in this repository
+- [AGENTS.md](https://github.com/lfreleng-actions/.github/blob/main/AGENTS.md): Binding contribution rules for AI coding agents in every organisation repository
+- [Tagging and Releasing Actions](https://github.com/lfreleng-actions/.github/blob/main/profile/README.md#tagging-and-releasing-actions): How to tag and release an action repository
