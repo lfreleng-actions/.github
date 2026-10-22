@@ -28,7 +28,6 @@ with signed tags and provenance attestations.
 | [python-audit-action]         | Audit Python dependencies for known security vulnerabilities     |
 | [python-twine-check-action]   | Verify Python build artefacts with Twine before publishing       |
 | [python-notebook-test-action] | Check Jupyter Notebooks with pytest and nbmake                   |
-| [python-sbom-action]          | Generate CycloneDX SBOM reports for Python projects              |
 | [tox-run-action]              | Run tox with specified Python version and environments           |
 | [gradle-build-action]         | Set up a specific JDK version and run a Gradle build             |
 | [maven-build-action]          | Set up Maven and build a Java project                            |
@@ -422,7 +421,6 @@ to all repositories unless otherwise stated.
 [python-audit-action]: https://github.com/lfreleng-actions/python-audit-action
 [python-twine-check-action]: https://github.com/lfreleng-actions/python-twine-check-action
 [python-notebook-test-action]: https://github.com/lfreleng-actions/python-notebook-test-action
-[python-sbom-action]: https://github.com/lfreleng-actions/python-sbom-action
 [tox-run-action]: https://github.com/lfreleng-actions/tox-run-action
 [gradle-build-action]: https://github.com/lfreleng-actions/gradle-build-action
 [maven-build-action]: https://github.com/lfreleng-actions/maven-build-action
