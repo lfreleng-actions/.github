@@ -35,6 +35,7 @@ with signed tags and provenance attestations.
 | [maven-make-build-action]     | Set up Maven and run make                                        |
 | [maven-xml-settings-action]   | Create Maven XML settings files for build and publish jobs       |
 | [junit-test-report-action]    | Summarise JUnit XML test results in the workflow job summary     |
+| [csit-build-action]           | Run OpenDaylight CSIT robot suites on containerised lab nodes    |
 | [node-build-action]           | Set up Node.js and build a project with npm or yarn              |
 | [node-audit-action]           | Audit Node.js dependencies for known security vulnerabilities    |
 | [go-build-action]             | Build a Go project with optional cross-compilation support       |
@@ -429,6 +430,7 @@ to all repositories unless otherwise stated.
 [maven-make-build-action]: https://github.com/lfreleng-actions/maven-make-build-action
 [maven-xml-settings-action]: https://github.com/lfreleng-actions/maven-xml-settings-action
 [junit-test-report-action]: https://github.com/lfreleng-actions/junit-test-report-action
+[csit-build-action]: https://github.com/lfreleng-actions/csit-build-action
 [node-build-action]: https://github.com/lfreleng-actions/node-build-action
 [node-audit-action]: https://github.com/lfreleng-actions/node-audit-action
 [go-build-action]: https://github.com/lfreleng-actions/go-build-action
