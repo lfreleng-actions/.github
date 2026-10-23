@@ -75,11 +75,20 @@ concurrency:
   # serialise every open pull request into one group.
   # yamllint disable-line rule:line-length
   group: 'org-autolabeler-${{ github.event_name }}-pr-${{ github.event.pull_request.number }}'
-  # Cancelling is safe here, unlike the semantic pull request check.
-  # Labelling is idempotent, and this workflow publishes no check run
-  # that a required status check names, so a superseded run leaves
-  # nothing behind for the merge box to report.
-  cancel-in-progress: true
+  # Do NOT cancel, and queue rather than replace, for the reason
+  # semantic-pull-request.yaml gives. This file is injected into every
+  # targeted repository, and any of them may make its check a required
+  # status check. A cancelled run left beside a successful one for the
+  # same head SHA then blocks ruleset evaluation. The 'edited' trigger
+  # makes such bursts common: correcting a title and then a body is
+  # the ordinary sequence it exists to serve.
+  #
+  # 'queue: max' stops a third event cancelling the pending run, which
+  # the default 'single' queue would do. It cannot be combined with
+  # 'cancel-in-progress: true'. Labelling is idempotent and takes
+  # seconds, so running every superseded event costs almost nothing.
+  cancel-in-progress: false
+  queue: max
 
 jobs:
   autolabel:
