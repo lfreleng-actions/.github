@@ -93,7 +93,8 @@ level. Each entry below says how the rest reach repositories.
   a weekly schedule (Monday 10:00 UTC). Compares the current list of
   repositories in the organisation against the profile README and sends a
   Slack notification to `#releng-scm` when it finds new repositories
-  that lack documentation or an explicit exclusion entry.
+  that lack documentation or an explicit exclusion entry, or archived
+  repositories that the README still lists.
 - **[`zizmor.yaml`](.github/workflows/zizmor.yaml)** — Organisation-wide
   static security audit of GitHub Actions workflows and composite actions
   using [zizmor](https://docs.zizmor.sh/). Runs on every pull request
@@ -890,12 +891,16 @@ rules can guard the App key and the Slack token.
 
 The `repo-audit.yaml` workflow:
 
-1. Lists all repositories in the organisation via the GitHub API
-2. Filters out repositories named in `excluded-repos.json`
+1. Lists all repositories in the organisation via the GitHub API,
+   splitting them into active and archived sets
+2. Filters out active repositories named in `excluded-repos.json`
 3. Parses the profile README for documented repository links
-4. Compares the two sets and identifies any undocumented repositories
-5. Posts a summary to the GitHub Actions job output
-6. Sends a Slack notification to `#releng-scm` if any updates need attention
+4. Identifies active repositories the README does not document
+5. Identifies archived repositories the README still links, including
+   any named in `excluded-repos.json`
+6. Posts a summary to the GitHub Actions job output
+7. Sends a Slack notification to `#releng-scm` for each kind of
+   update that needs attention
 
 The workflow requires:
 
