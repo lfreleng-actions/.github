@@ -31,7 +31,12 @@ permissions: {}
 # the target repository sharing it. See semantic-pull-request.yaml.
 concurrency:
   group: 'org-sha-pinned-actions-${{ github.ref }}'
-  cancel-in-progress: true
+  # Do NOT cancel, and queue rather than replace. A ruleset requires
+  # this workflow, and a cancelled duplicate run for the same head SHA
+  # can fail the requirement even when its twin passed, blocking the
+  # merge. See semantic-pull-request.yaml for the full reasoning.
+  cancel-in-progress: false
+  queue: max
 
 jobs:
   verify:
