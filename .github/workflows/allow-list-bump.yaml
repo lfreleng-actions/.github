@@ -183,7 +183,7 @@ jobs:
       # Load the egress allow-list out-of-band from lfreleng-actions/.github
       # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
       # yamllint disable-line rule:line-length
-      - uses: lfreleng-actions/harden-runner-block-action@51ef68401547a8b648275129b9a21544612596d5  # v0.13.1
+      - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
         with:
           config: '@d43a857514f81ce2af4230aca16e179ef96148d8'  # v0.13.0
 
@@ -1085,7 +1085,7 @@ jobs:
     permissions: {}
     steps:
       # yamllint disable-line rule:line-length
-      - uses: lfreleng-actions/harden-runner-block-action@51ef68401547a8b648275129b9a21544612596d5  # v0.13.1
+      - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
         with:
           config: '@d43a857514f81ce2af4230aca16e179ef96148d8'  # v0.13.0
 
@@ -1279,7 +1279,7 @@ jobs:
       # The pinned allow-list permits slack.com, so the notification below
       # reaches Slack under the block egress policy.
       # yamllint disable-line rule:line-length
-      - uses: lfreleng-actions/harden-runner-block-action@51ef68401547a8b648275129b9a21544612596d5  # v0.13.1
+      - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
         with:
           config: '@d43a857514f81ce2af4230aca16e179ef96148d8'  # v0.13.0
 
