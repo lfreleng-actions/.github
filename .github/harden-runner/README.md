@@ -6,7 +6,7 @@ SPDX-FileCopyrightText: 2026 The Linux Foundation
 # harden-runner egress allow-lists
 
 This directory holds the shared [harden-runner][hr] egress allow-lists
-for the organisation. Each `allow_list.txt` enumerates the
+for the organisation. Each list enumerates the
 `host[:port]` endpoints that CI workflows may reach; harden-runner runs
 in `block` mode and denies any host a list omits, so the list acts as
 the single source of truth for permitted egress.
@@ -38,7 +38,8 @@ requests raised from forks.
 ## Layout
 
 Files live one directory per organisation, keyed on the GitHub owner
-of the repository running the workflow (`github.repository_owner`):
+of the repository running the workflow (`github.repository_owner`),
+alongside the purpose-specific lists described below:
 
 ```text
 .github/harden-runner/<org>/allow_list.txt
@@ -49,6 +50,37 @@ uses the first file that exists:
 
 1. `.github/harden-runner/<org>/allow_list.txt` — org-specific list
 2. `.github/harden-runner/allow_list.txt` — family-wide default
+
+When both miss, as they do in a fork, the action falls back to the
+one directory under `.github/harden-runner/` that holds a file with
+the requested name. That fallback works while a single
+`allow_list.txt` exists here, and fails once there are two.
+
+The organisation list stays the baseline for general workflows.
+
+### Purpose-specific lists
+
+[`lf-gerrit-servers/`](lf-gerrit-servers/) is the first directory
+here that is not an organisation. Its
+[`gerrit_servers.txt`](lf-gerrit-servers/gerrit_servers.txt) holds
+the Linux Foundation project Gerrit servers and nothing else, on both
+the SSH (`29418`) and HTTPS (`443`) ports. A job that talks to
+nothing beyond GitHub and a project Gerrit, such as a Gerrit vote, can
+load it by itself in `block` mode; a job that needs both lists loads the
+organisation list as `config` and this one as `supplemental_config`.
+Its entries also appear in the organisation list on purpose, so a
+workflow can move between the two without both changing in lockstep.
+
+Never name a list in such a directory `allow_list.txt`: a
+second file of that name makes the fork fallback above ambiguous, and
+it then fails for every fork. Give the file a descriptive name and
+have consumers load it by explicit path, which never falls back:
+
+```yaml
+- uses: lfreleng-actions/harden-runner-block-action@<sha>  # <version>
+  with:
+    config: 'lfreleng-actions//.github/harden-runner/lf-gerrit-servers/gerrit_servers.txt@<sha>'
+```
 
 ## File format
 
@@ -86,8 +118,9 @@ Two safeguards back this up:
   by default, drops any that no longer resolve before harden-runner
   sees them (`invalid_records: filter`).
 - The daily [`allow-list-dns-check.yaml`][dns-check] workflow checks
-  this list on the default branch and at the latest release, and posts
-  any hostname that no longer resolves to `#releng-scm`.
+  the organisation list and the Gerrit servers list on the default
+  branch and at the latest release, and posts any hostname that no
+  longer resolves to `#releng-scm`.
 
 [hr]: https://github.com/step-security/harden-runner
 [block]: https://github.com/lfreleng-actions/harden-runner-block-action
