@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 The Linux Foundation
 
-# Daily DNS check of the harden-runner egress allow-list.
+# Daily DNS check of the harden-runner egress allow-lists: the
+# organisation list (<org>/allow_list.txt) and the Gerrit servers list
+# (lf-gerrit-servers/gerrit_servers.txt).
 #
 # step-security/harden-runner resolves every non-wildcard allowed
 # endpoint before it enables block mode (wildcards are never
@@ -14,11 +16,13 @@
 # in the first place: this workflow finds them so they can be removed
 # or corrected. Like harden-runner, it skips wildcard entries.
 #
-# Every day it checks the allow-list at two refs of this repository:
+# Every day it checks each list at two refs of this repository:
 #
 #   - the default branch, which the next release will carry, and
 #   - the latest release, which consumers pin, but only when it points
 #     at a different commit, since otherwise the check would repeat.
+#     A release that predates the Gerrit servers list is not checked
+#     for it.
 #
 # Each check runs harden-runner-block-action itself, in its default
 # 'filter' mode, and reads the invalid_records / invalid_count outputs;
@@ -67,6 +71,7 @@ jobs:
       tag: '${{ steps.refs.outputs.tag }}'
       tag_sha: '${{ steps.refs.outputs.tag_sha }}'
       check_tag: '${{ steps.refs.outputs.check_tag }}'
+      check_gerrit_tag: '${{ steps.refs.outputs.check_gerrit_tag }}'
     steps:
       - name: 'Harden runner (audit)'
         # yamllint disable-line rule:line-length
@@ -81,6 +86,8 @@ jobs:
           GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
           REPO: '${{ github.repository }}'
           BRANCH: '${{ github.event.repository.default_branch }}'
+          # yamllint disable-line rule:line-length
+          GERRIT_LIST: '.github/harden-runner/lf-gerrit-servers/gerrit_servers.txt'
         run: |
           # Resolve the default branch and latest release
           set -euo pipefail
@@ -128,11 +135,28 @@ jobs:
             fi
           fi
 
+          # A release cut before the Gerrit servers list existed has no
+          # copy to check. Only a 404 means that; any other error must
+          # fail this job, as above.
+          check_gerrit_tag='false'
+          if [ "${check_tag}" = 'true' ]; then
+            lookup="repos/${REPO}/contents/${GERRIT_LIST}?ref=${tag_sha}"
+            if err="$(gh api "${lookup}" --jq '.type' 2>&1 >/dev/null)"; then
+              check_gerrit_tag='true'
+            elif [[ "${err}" == *'HTTP 404'* ]]; then
+              echo "${tag} has no ${GERRIT_LIST}; not checking it there"
+            else
+              echo "::error::Could not look up ${GERRIT_LIST} at ${tag}: ${err}"
+              exit 1
+            fi
+          fi
+
           {
             echo "main_sha=${main_sha}"
             echo "tag=${tag}"
             echo "tag_sha=${tag_sha}"
             echo "check_tag=${check_tag}"
+            echo "check_gerrit_tag=${check_gerrit_tag}"
           } >> "$GITHUB_OUTPUT"
           echo "${BRANCH}: ${main_sha}; latest release: ${tag:-none}" \
             "${tag_sha:+(${tag_sha})}; check release: ${check_tag}"
@@ -196,9 +220,73 @@ jobs:
           config: '${{ github.repository_owner }}@${{ needs.refs.outputs.tag_sha }}'
           invalid_records: 'filter'
 
+  # The Gerrit servers list, loaded by explicit path, in jobs of its
+  # own for the same reason: a job-level condition is the only way to
+  # skip the action's pre hook, and the release check must also be
+  # skipped when the release predates the list.
+  check-gerrit-main:
+    name: 'Check default branch (Gerrit servers)'
+    needs: 'refs'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      invalid_records: '${{ steps.check.outputs.invalid_records }}'
+      invalid_count: '${{ steps.check.outputs.invalid_count }}'
+      indeterminate_records: '${{ steps.check.outputs.indeterminate_records }}'
+    steps:
+      - name: 'Harden runner (audit)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
+        with:
+          egress-policy: 'audit'
+
+      - name: 'Check Gerrit servers list DNS records'
+        id: 'check'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
+        with:
+          # yamllint disable-line rule:line-length
+          config: '${{ github.repository_owner }}//.github/harden-runner/lf-gerrit-servers/gerrit_servers.txt@${{ needs.refs.outputs.main_sha }}'
+          # Distinct from the organisation list's default variable, so
+          # the two never collide if they come to share a job.
+          env_var_name: 'GERRIT_SERVERS_ALLOW_LIST'
+          invalid_records: 'filter'
+
+  check-gerrit-tag:
+    name: 'Check latest release (Gerrit servers)'
+    needs: 'refs'
+    if: needs.refs.outputs.check_gerrit_tag == 'true'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      invalid_records: '${{ steps.check.outputs.invalid_records }}'
+      invalid_count: '${{ steps.check.outputs.invalid_count }}'
+      indeterminate_records: '${{ steps.check.outputs.indeterminate_records }}'
+    steps:
+      - name: 'Harden runner (audit)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
+        with:
+          egress-policy: 'audit'
+
+      - name: 'Check Gerrit servers list DNS records'
+        id: 'check'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
+        with:
+          # yamllint disable-line rule:line-length
+          config: '${{ github.repository_owner }}//.github/harden-runner/lf-gerrit-servers/gerrit_servers.txt@${{ needs.refs.outputs.tag_sha }}'
+          env_var_name: 'GERRIT_SERVERS_ALLOW_LIST'
+          invalid_records: 'filter'
+
   notify:
     name: 'Report and notify Slack'
-    needs: ['refs', 'check-main', 'check-tag']
+    # yamllint disable-line rule:line-length
+    needs: ['refs', 'check-main', 'check-tag', 'check-gerrit-main', 'check-gerrit-tag']
     if: ${{ always() }}
     runs-on: 'ubuntu-latest'
     timeout-minutes: 5
@@ -234,6 +322,17 @@ jobs:
           TAG_INVALID: '${{ needs.check-tag.outputs.invalid_records }}'
           # yamllint disable-line rule:line-length
           TAG_INDETERMINATE: '${{ needs.check-tag.outputs.indeterminate_records }}'
+          CHECK_GERRIT_TAG: '${{ needs.refs.outputs.check_gerrit_tag }}'
+          GERRIT_MAIN_RESULT: '${{ needs.check-gerrit-main.result }}'
+          # yamllint disable-line rule:line-length
+          GERRIT_MAIN_INVALID: '${{ needs.check-gerrit-main.outputs.invalid_records }}'
+          # yamllint disable-line rule:line-length
+          GERRIT_MAIN_INDETERMINATE: '${{ needs.check-gerrit-main.outputs.indeterminate_records }}'
+          GERRIT_TAG_RESULT: '${{ needs.check-gerrit-tag.result }}'
+          # yamllint disable-line rule:line-length
+          GERRIT_TAG_INVALID: '${{ needs.check-gerrit-tag.outputs.invalid_records }}'
+          # yamllint disable-line rule:line-length
+          GERRIT_TAG_INDETERMINATE: '${{ needs.check-gerrit-tag.outputs.indeterminate_records }}'
         run: |
           # Build report
           set -euo pipefail
@@ -246,14 +345,18 @@ jobs:
           {
             echo '## 🔎 Allow-list DNS check'
             echo ''
-            echo '| Ref | Commit | Result |'
-            echo '| --- | ------ | ------ |'
+            echo '| Ref | List | Commit | Result |'
+            echo '| --- | ---- | ------ | ------ |'
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # report <label> <sha> <job result> <invalid> <indeterminate>
+          # report <label> <list> <sha> <job result> <invalid>
+          #   <indeterminate> [<note when skipped>]
           report() {
-            local label="$1" sha="$2" result="$3" invalid="$4" maybe="$5"
-            local short="${sha:0:7}" count
+            local label="$1" list="$2" sha="$3" result="$4" invalid="$5"
+            local maybe="$6"
+            local skip_note="${7:-same commit as \`${BRANCH}\`; not repeated}"
+            local short="${sha:0:7}" count row
+            row="| \`${label}\` | \`${list}\` |"
             case "${result}" in
               success)
                 read -r -a records <<< "${invalid}"
@@ -261,50 +364,64 @@ jobs:
                 count="${#records[@]}"
                 undecided=$((undecided + ${#pending[@]}))
                 if [ "${count}" -eq 0 ] && [ "${#pending[@]}" -eq 0 ]; then
-                  echo "| \`${label}\` | \`${short}\` | ✅ all resolve |" \
+                  echo "${row} \`${short}\` | ✅ all resolve |" \
                     >> "$GITHUB_STEP_SUMMARY"
                 fi
                 if [ "${count}" -gt 0 ]; then
-                  echo "| \`${label}\` | \`${short}\` | ❌ ${count} invalid:" \
+                  echo "${row} \`${short}\` | ❌ ${count} invalid:" \
                     "\`${invalid}\` |" >> "$GITHUB_STEP_SUMMARY"
-                  slack="${slack}*\`${label}\`* (\`${short}\`): ${count}"
-                  slack="${slack} invalid\\n"
+                  slack="${slack}*\`${label}\`* \`${list}\` (\`${short}\`):"
+                  slack="${slack} ${count} invalid\\n"
                   for r in "${records[@]}"; do
                     slack="${slack}• \`${r}\`\\n"
                     unique["${r}"]=1
                   done
                 fi
                 if [ -n "${maybe}" ]; then
-                  echo "| \`${label}\` | \`${short}\` | ⚠️ no verdict" \
+                  echo "${row} \`${short}\` | ⚠️ no verdict" \
                     "(transient?): \`${maybe}\` |" >> "$GITHUB_STEP_SUMMARY"
                 fi
                 ;;
               skipped)
-                echo "| \`${label}\` | \`${short}\` | ➖ same commit as" \
-                  "\`${BRANCH}\`; not repeated |" >> "$GITHUB_STEP_SUMMARY"
+                echo "${row} \`${short}\` | ➖ ${skip_note} |" \
+                  >> "$GITHUB_STEP_SUMMARY"
                 ;;
               *)
                 failures=$((failures + 1))
-                echo "| \`${label}\` | \`${short:-?}\` | ⚠️ check did not" \
+                echo "${row} \`${short:-?}\` | ⚠️ check did not" \
                   "complete (${result}) |" >> "$GITHUB_STEP_SUMMARY"
-                slack="${slack}*\`${label}\`*: :warning: the check did not"
-                slack="${slack} complete (${result}); see the run\\n"
+                slack="${slack}*\`${label}\`* \`${list}\`: :warning: the"
+                slack="${slack} check did not complete (${result}); see"
+                slack="${slack} the run\\n"
                 ;;
             esac
           }
 
+          org_list='allow_list.txt'
+          gerrit_list='gerrit_servers.txt'
           if [ "${REFS_RESULT}" != 'success' ]; then
             failures=$((failures + 1))
-            echo "| (refs) | | ⚠️ could not resolve refs:" \
+            echo "| (refs) | | | ⚠️ could not resolve refs:" \
               "${REFS_RESULT} |" >> "$GITHUB_STEP_SUMMARY"
             slack=':warning: Could not resolve the refs to check;'
             slack="${slack} no allow-list was checked.\\n"
           else
-            report "${BRANCH}" "${MAIN_SHA}" "${MAIN_RESULT}" \
-              "${MAIN_INVALID}" "${MAIN_INDETERMINATE}"
+            report "${BRANCH}" "${org_list}" "${MAIN_SHA}" \
+              "${MAIN_RESULT}" "${MAIN_INVALID}" "${MAIN_INDETERMINATE}"
+            report "${BRANCH}" "${gerrit_list}" "${MAIN_SHA}" \
+              "${GERRIT_MAIN_RESULT}" "${GERRIT_MAIN_INVALID}" \
+              "${GERRIT_MAIN_INDETERMINATE}"
             if [ -n "${TAG}" ]; then
-              report "${TAG}" "${TAG_SHA}" "${TAG_RESULT}" \
-                "${TAG_INVALID}" "${TAG_INDETERMINATE}"
+              report "${TAG}" "${org_list}" "${TAG_SHA}" \
+                "${TAG_RESULT}" "${TAG_INVALID}" "${TAG_INDETERMINATE}"
+              gerrit_skip=''
+              if [ "${TAG_SHA}" != "${MAIN_SHA}" ] \
+                && [ "${CHECK_GERRIT_TAG}" != 'true' ]; then
+                gerrit_skip='list not present at this release'
+              fi
+              report "${TAG}" "${gerrit_list}" "${TAG_SHA}" \
+                "${GERRIT_TAG_RESULT}" "${GERRIT_TAG_INVALID}" \
+                "${GERRIT_TAG_INDETERMINATE}" "${gerrit_skip}"
             fi
           fi
 
@@ -339,8 +456,8 @@ jobs:
             headline="🔎 Allow-list DNS check: ${total} invalid record(s)"
             detail="These entries no longer resolve to an A record."
             detail="${detail} Consumers filter them at run time, but they"
-            detail="${detail} should be removed or corrected in"
-            detail="${detail} \`allow_list.txt\`. ${undecided_note}"
+            detail="${detail} should be removed or corrected in the list"
+            detail="${detail} named beside each. ${undecided_note}"
           elif [ "${failures}" -gt 0 ]; then
             headline='🔎 Allow-list DNS check could not complete'
             detail='The check itself failed, so invalid records may have'
