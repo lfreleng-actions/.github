@@ -210,9 +210,6 @@ archive.ubuntu.com:80
 # (e.g. gerrit-clone-action, python-sbom-action).
 astral.sh:443
 
-# Artifactory (ASWF); LF project artifact repository.
-aswf.jfrog.io:443
-
 # Docker Hub registry auth, used by docker buildx/build-push and helm.
 auth.docker.io:443
 
@@ -490,6 +487,11 @@ lfnetworking.1password.com:443
 
 # 1Password vault (Linux Foundation tenant); secret retrieval.
 linuxfoundation.1password.com:443
+
+# Artifactory (Linux Foundation SaaS tenant; hosts ASWF repositories);
+# JFrog registry and Docker API for the docker-workflows lanes
+# (lfreleng-actions/docker-workflows#26).
+linuxfoundation.jfrog.io:443
 
 # Linux Foundation website (wget fetches).
 linuxfoundation.org:443
