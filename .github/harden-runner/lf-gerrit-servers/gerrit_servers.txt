@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+#
+# Linux Foundation project Gerrit servers egress allow-list.
+#
+# This list deliberately holds the project Gerrit servers and nothing
+# else. It serves jobs whose only traffic beyond GitHub's own
+# endpoints is a project Gerrit: clearing and setting a vote, or
+# asking whether a change is readable, with 'gerrit query' and
+# 'gerrit review' over SSH. Such a job can load this short list in
+# 'block' mode instead of the organisation list. Do not add other
+# hosts here; they belong in the organisation list.
+#
+# Load it by explicit path with harden-runner-block-action:
+#
+#   - uses: lfreleng-actions/harden-runner-block-action@<sha>  # <version>
+#     with:
+#       config: 'lfreleng-actions//.github/harden-runner/lf-gerrit-servers/gerrit_servers.txt@<.github commit sha>'
+#
+# To combine it with the organisation list, set config: '@<sha>' and
+# supplemental_config: 'lfreleng-actions//.github/harden-runner/lf-gerrit-servers/gerrit_servers.txt@<sha>'.
+#
+# This file is not named 'allow_list.txt' on purpose. When a fork's
+# config: '@<sha>' misses both the org-specific and the family-default
+# path, harden-runner-block-action falls back to the one directory
+# under .github/harden-runner/ that holds a file with the requested
+# name. A second 'allow_list.txt' would make that match ambiguous and
+# break the fallback for every fork. A file with another name is
+# invisible to the search, and an explicit path never falls back.
+#
+# Every entry here is also present, on purpose, in the organisation
+# list (../lfreleng-actions/allow_list.txt), so a workflow can move
+# from one list to the other without both changing in lockstep;
+# harden-runner-block-action de-duplicates a supplemental list against
+# its baseline.
+#
+# Format: one host[:port] entry per line, sorted alphabetically
+# (LC_ALL=C), no wildcards, with a '# comment' directly above each
+# host. Each server is listed on both ports: 29418 for SSH
+# ('gerrit query', 'gerrit review', git over SSH) and 443 for HTTPS
+# (clone, REST).
+
+# Gerrit (Automotive Grade Linux): SSH queries, review voting and
+# git over SSH (29418); clone and REST (443).
+gerrit.automotivelinux.org:29418
+gerrit.automotivelinux.org:443
+
+# Gerrit (FD.io): SSH queries, review voting and git over SSH
+# (29418); clone and REST (443).
+gerrit.fd.io:29418
+gerrit.fd.io:443
+
+# Gerrit (LF Broadband): SSH queries, review voting and git over SSH
+# (29418); clone and REST (443).
+gerrit.lfbroadband.org:29418
+gerrit.lfbroadband.org:443
+
+# Gerrit (LF Releng): SSH queries, review voting and git over SSH
+# (29418); clone and REST (443).
+gerrit.linuxfoundation.org:29418
+gerrit.linuxfoundation.org:443
+
+# Gerrit (O-RAN-SC): SSH queries, review voting and git over SSH
+# (29418); clone and REST (443).
+gerrit.o-ran-sc.org:29418
+gerrit.o-ran-sc.org:443
+
+# Gerrit (ONAP): SSH queries, review voting and git over SSH (29418);
+# clone and REST (443).
+gerrit.onap.org:29418
+gerrit.onap.org:443
+
+# Gerrit (Anuket, formerly OPNFV): SSH queries, review voting and git
+# over SSH (29418); clone and REST (443).
+gerrit.opnfv.org:29418
+gerrit.opnfv.org:443
+
+# Gerrit (OpenDaylight): its SSH host; the web UI sits under
+# /gerrit. SSH queries, review voting and git over SSH (29418); clone
+# and REST (443).
+git.opendaylight.org:29418
+git.opendaylight.org:443

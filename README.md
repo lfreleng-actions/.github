@@ -67,7 +67,11 @@ level. Each entry below says how the rest reach repositories.
   allow-lists. Organisation workflows run harden-runner in `block` mode
   and load
   [`allow_list.txt`](.github/harden-runner/lfreleng-actions/allow_list.txt)
-  at runtime, so harden-runner denies any host the list omits. See
+  at runtime, so harden-runner denies any host the list omits. Jobs
+  that talk to nothing beyond GitHub and a project Gerrit can load the
+  shorter
+  [`gerrit_servers.txt`](.github/harden-runner/lf-gerrit-servers/gerrit_servers.txt)
+  instead. See
   [Harden-runner egress allow-list](#harden-runner-egress-allow-list)
   below for the wildcard matching rules, which are easy to get wrong.
 
@@ -166,7 +170,8 @@ policy does not name. The permitted endpoints live in
 loaded at runtime by
 [harden-runner-block-action](https://github.com/lfreleng-actions/harden-runner-block-action).
 The [directory README](.github/harden-runner/README.md) covers the file
-format and layout.
+format and layout, including the list of Gerrit servers under
+[`lf-gerrit-servers/`](.github/harden-runner/lf-gerrit-servers/).
 
 #### How entries match
 
