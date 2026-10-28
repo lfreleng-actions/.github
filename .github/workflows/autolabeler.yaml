@@ -102,7 +102,7 @@ jobs:
     # itself a fork rather than whether the pull request crosses
     # repositories.
     # yamllint disable-line rule:line-length
-    uses: lfreleng-actions/generic-workflows/.github/workflows/autolabeler.yaml@336b2421eabb18d0409043e84ea45bfdc4fa37a2  # v0.6.0
+    uses: lfreleng-actions/generic-workflows/.github/workflows/autolabeler.yaml@04672a980550ff9bd89d24bacd39fb03e25b0b0b  # v0.6.1
     permissions:
       contents: read  # Lane reads the release-drafter config from the repo
       pull-requests: write  # Lane applies labels to the pull request

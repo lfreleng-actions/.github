@@ -39,7 +39,7 @@ jobs:
   package-hardening-audit:
     name: 'Audit package manager hardening'
     # yamllint disable-line rule:line-length
-    uses: lfreleng-actions/security-workflows/.github/workflows/package-hardening-audit.yaml@ef6c0d9930feedb274067703b50eeebe5ab859b3  # v0.9.5
+    uses: lfreleng-actions/security-workflows/.github/workflows/package-hardening-audit.yaml@0f985c4a991737aefe59666bf70d94c017fa2a8b  # v0.9.6
     permissions:
       contents: read  # Lane checks out the repository under audit
     with:
