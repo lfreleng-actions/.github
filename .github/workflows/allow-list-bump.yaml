@@ -183,9 +183,9 @@ jobs:
       # Load the egress allow-list out-of-band from lfreleng-actions/.github
       # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
       # yamllint disable-line rule:line-length
-      - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
+      - uses: lfreleng-actions/harden-runner-block-action@2fed66c9c36c4687c31ca349b925b81ec629673f  # v0.15.0
         with:
-          config: '@d43a857514f81ce2af4230aca16e179ef96148d8'  # v0.13.0
+          config: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
 
       - name: 'Harden runner (block)'
         # yamllint disable-line rule:line-length
@@ -356,7 +356,7 @@ jobs:
 
       - name: 'Install uv'
         # yamllint disable-line rule:line-length
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           # No cache. The one install this job does, the linter and its
           # dependencies, takes seconds, and a cache entry is one more
@@ -1085,9 +1085,9 @@ jobs:
     permissions: {}
     steps:
       # yamllint disable-line rule:line-length
-      - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
+      - uses: lfreleng-actions/harden-runner-block-action@2fed66c9c36c4687c31ca349b925b81ec629673f  # v0.15.0
         with:
-          config: '@d43a857514f81ce2af4230aca16e179ef96148d8'  # v0.13.0
+          config: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
 
       - name: 'Harden runner (block)'
         # yamllint disable-line rule:line-length
@@ -1279,9 +1279,9 @@ jobs:
       # The pinned allow-list permits slack.com, so the notification below
       # reaches Slack under the block egress policy.
       # yamllint disable-line rule:line-length
-      - uses: lfreleng-actions/harden-runner-block-action@e5e8179f45aa893b23cc8b5d2e25466355d9c4f8  # v0.14.0
+      - uses: lfreleng-actions/harden-runner-block-action@2fed66c9c36c4687c31ca349b925b81ec629673f  # v0.15.0
         with:
-          config: '@d43a857514f81ce2af4230aca16e179ef96148d8'  # v0.13.0
+          config: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
 
       - name: 'Harden runner (block)'
         # yamllint disable-line rule:line-length
