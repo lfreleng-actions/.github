@@ -48,3 +48,9 @@ notice-rgx = "SPDX-FileCopyrightText:\\s+\\d{4}"
 # and counts are the assertions, and the suite exists to drive git and
 # the scripts under test as subprocesses found on PATH.
 "scripts/agents/tests/*.py" = ["S101", "PLR2004", "S603", "S607"]
+# The findings-ratchet action: a standalone script beside its
+# action.yaml prints workflow commands and its report to stdout, and its
+# suite runs that script as a subprocess. Neither directory is a
+# package; the tests stay out of the scripts/agents "tests" package.
+"actions/findings-ratchet/*.py" = ["T201", "INP001"]
+"actions/findings-ratchet/tests/*.py" = ["S101", "PLR2004", "S603", "INP001"]

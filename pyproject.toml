@@ -24,7 +24,7 @@ dev = ["basedpyright==1.40.2", "pytest==9.1.1"]
 sweep = ["gha-workflow-linter==1.10.1"]
 
 [tool.pytest.ini_options]
-testpaths = ["scripts/agents/tests"]
+testpaths = ["scripts/agents/tests", "actions/findings-ratchet/tests"]
 # strict xfail is the AGENTS.md §6.5 contract: a test marked as expected to fail
 # that passes fails the run, so the marker cannot outlive its fix.
 xfail_strict = true
@@ -36,8 +36,11 @@ xfail_strict = true
 # so local and CI results agree.
 typeCheckingMode = "all"
 pythonVersion = "3.11"
-include = [".github/scripts", "scripts/agents/tests"]
+include = [".github/scripts", "scripts/agents/tests", "actions/findings-ratchet"]
 exclude = [".worktrees", ".mypy_cache", ".ruff_cache", ".venv"]
+# findings_ratchet.py imports sarif_log.py from its own directory, which
+# is how Python resolves it when the action runs the script by path.
+executionEnvironments = [{ root = "actions/findings-ratchet" }]
 # The pytest imports in scripts/agents/tests resolve from the .venv that
 # `uv sync` creates. It is not named here: basedpyright exits 3 when a
 # configured venv is absent, and pre-commit.ci never has one. The CI
@@ -49,5 +52,5 @@ strict = true
 # Match basedpyright's pythonVersion so both type-checking gates
 # enforce the same target regardless of the interpreter running them.
 python_version = "3.11"
-files = [".github/scripts", "scripts/agents/tests"]
+files = [".github/scripts", "scripts/agents/tests", "actions/findings-ratchet"]
 exclude = ["\\.worktrees"]
