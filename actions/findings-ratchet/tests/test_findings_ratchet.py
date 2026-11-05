@@ -31,10 +31,6 @@ EXIT_USAGE = 2
 
 DEP_RULE = "security/vulnerable-dependency"
 
-pytestmark = pytest.mark.xfail(
-    strict=True, reason="findings_ratchet.py is not implemented yet"
-)
-
 
 @dataclass(frozen=True)
 class Outcome:

@@ -1,0 +1,100 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Findings ratchet: compares a pull request head SARIF against its merge
+# base SARIF and fails only when the head adds findings. See README.md.
+
+name: 'Findings ratchet'
+description: >-
+  Compare head and base SARIF reports by counted findings and fail
+  only when the head adds findings relative to its base.
+
+inputs:
+  head-sarif:
+    description: 'SARIF from the pull request head'
+    required: true
+  base-sarif:
+    description: >-
+      SARIF from the merge base, scanned with identical settings and
+      scope. Empty, missing or invalid selects absolute mode.
+    required: false
+    default: ''
+  head-root:
+    description: 'Absolute directory to strip from head artifact URIs'
+    required: false
+    default: ''
+  base-root:
+    description: 'Absolute directory to strip from base artifact URIs'
+    required: false
+    default: ''
+  tool:
+    description: 'Subject normaliser: aislop, zizmor or generic'
+    required: true
+  mode:
+    description: 'ratchet or absolute'
+    required: false
+    default: 'ratchet'
+  levels:
+    description: 'Comma-separated SARIF levels that count'
+    required: false
+    default: 'error,warning,note,none'
+  exclude-rules:
+    description: 'Comma-separated rule IDs never counted'
+    required: false
+    default: ''
+  annotate:
+    description: 'Emit one error annotation per new finding (true/false)'
+    required: false
+    default: 'true'
+
+outputs:
+  verdict:
+    description: 'pass or fail'
+    value: ${{ steps.ratchet.outputs.verdict }}
+  effective-mode:
+    description: 'Mode applied: ratchet, or absolute after a fallback'
+    value: ${{ steps.ratchet.outputs['effective-mode'] }}
+  base-count:
+    description: 'Counted findings in the base SARIF'
+    value: ${{ steps.ratchet.outputs['base-count'] }}
+  head-count:
+    description: 'Counted findings in the head SARIF'
+    value: ${{ steps.ratchet.outputs['head-count'] }}
+  new-count:
+    description: 'Findings the head adds relative to the base'
+    value: ${{ steps.ratchet.outputs['new-count'] }}
+  fixed-count:
+    description: 'Findings the head removes relative to the base'
+    value: ${{ steps.ratchet.outputs['fixed-count'] }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Compare findings'
+      id: 'ratchet'
+      shell: 'bash'
+      env:
+        INPUT_HEAD_SARIF: ${{ inputs.head-sarif }}
+        INPUT_BASE_SARIF: ${{ inputs.base-sarif }}
+        INPUT_HEAD_ROOT: ${{ inputs.head-root }}
+        INPUT_BASE_ROOT: ${{ inputs.base-root }}
+        INPUT_TOOL: ${{ inputs.tool }}
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_LEVELS: ${{ inputs.levels }}
+        INPUT_EXCLUDE_RULES: ${{ inputs.exclude-rules }}
+        INPUT_ANNOTATE: ${{ inputs.annotate }}
+      run: |
+        set -euo pipefail
+        # The '--name=value' form keeps a value that starts with '-'
+        # from being read as an option.
+        python3 "${GITHUB_ACTION_PATH}/findings_ratchet.py" \
+          "--head-sarif=${INPUT_HEAD_SARIF}" \
+          "--base-sarif=${INPUT_BASE_SARIF}" \
+          "--head-root=${INPUT_HEAD_ROOT}" \
+          "--base-root=${INPUT_BASE_ROOT}" \
+          "--tool=${INPUT_TOOL}" \
+          "--mode=${INPUT_MODE}" \
+          "--levels=${INPUT_LEVELS}" \
+          "--exclude-rules=${INPUT_EXCLUDE_RULES}" \
+          "--annotate=${INPUT_ANNOTATE}"

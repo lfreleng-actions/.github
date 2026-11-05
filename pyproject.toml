@@ -38,6 +38,9 @@ typeCheckingMode = "all"
 pythonVersion = "3.11"
 include = [".github/scripts", "scripts/agents/tests", "actions/findings-ratchet"]
 exclude = [".worktrees", ".mypy_cache", ".ruff_cache", ".venv"]
+# findings_ratchet.py imports sarif_log.py from its own directory, which
+# is how Python resolves it when the action runs the script by path.
+executionEnvironments = [{ root = "actions/findings-ratchet" }]
 # The pytest imports in scripts/agents/tests resolve from the .venv that
 # `uv sync` creates. It is not named here: basedpyright exits 3 when a
 # configured venv is absent, and pre-commit.ci never has one. The CI
