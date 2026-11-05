@@ -18,11 +18,29 @@
 # ecosystem keeps the pinned action SHA current here.
 #
 # Mode: SARIF. zizmor itself exits 0 in SARIF mode (exit codes 11+ are
-# suppressed for SARIF consumers), so a dedicated gate step evaluates the
-# report and fails the run when it holds any finding at all. The audit
+# suppressed for SARIF consumers), so the findings-ratchet action from
+# this repository evaluates the report and decides the run. The audit
 # runs with an 'informational' floor, so every finding zizmor can report
-# reaches the SARIF and the gate blocks on all of them regardless of
-# tier.
+# reaches the SARIF and every SARIF level counts, whatever the tier.
+#
+# Ratchet: on pull_request the same pinned action, with the same
+# persona and severity floor, audits a detached worktree of the merge
+# base under $RUNNER_TEMP, and the ratchet fails the run only when the
+# head ADDS findings relative to that base. A pull request may carry
+# pre-existing findings, and may remove some, but may not add any.
+# When the base cannot be audited (no merge base, a failed audit, no
+# SARIF or an unusable one) the comparison falls back to absolute mode,
+# which fails on any finding in the head; a base-audit failure is never
+# a pass.
+#
+# Gate mode, from the variable ZIZMOR_GATE_MODE (organisation, or a
+# repository override):
+#
+#   ratchet (default)  Fail only on findings the pull request adds.
+#   absolute           Fail on any finding in the head, as before the
+#                      ratchet existed. Skips the base audit.
+#
+# workflow_dispatch has no base, so it always runs in absolute mode.
 #
 # This workflow does NOT publish to code scanning. The scheduled
 # zizmor-sarif-publish.yaml workflow is the single source of
@@ -59,7 +77,8 @@ jobs:
   audit:
     name: 'Audit Workflows'
     runs-on: 'ubuntu-latest'
-    timeout-minutes: 10
+    # Room for two audits: the head and, in ratchet mode, the merge base.
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -84,12 +103,42 @@ jobs:
         # yamllint disable-line rule:line-length
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          # Full history so the merge base of the pull request can be
+          # found and checked out for the base audit.
+          fetch-depth: 0
           persist-credentials: false
+
+      # Validate the gate mode before the audits run, so a mistyped
+      # variable fails fast.
+      - name: 'Resolve gate mode'
+        id: 'settings'
+        shell: 'bash'
+        env:
+          ZIZMOR_GATE_MODE: '${{ vars.ZIZMOR_GATE_MODE }}'
+          EVENT_NAME: '${{ github.event_name }}'
+        run: |
+          # Resolve gate mode
+          set -euo pipefail
+          mode="${ZIZMOR_GATE_MODE:-ratchet}"
+          case "${mode}" in
+            ratchet|absolute) ;;
+            *)
+              echo "::error::invalid ZIZMOR_GATE_MODE '${mode}';" \
+                   "expected 'ratchet' or 'absolute'"
+              exit 1
+              ;;
+          esac
+          # Only a pull request has a base to compare against.
+          if [ "${EVENT_NAME}" != 'pull_request' ]; then
+            mode='absolute'
+          fi
+          echo "zizmor gate mode: ${mode}"
+          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
 
       - name: 'Run zizmor audit'
         id: 'audit'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/zizmor-scan-action@366a41f866f1f8ca6aa57e94252de6dee8e7da3b  # v0.5.4
+        uses: lfreleng-actions/zizmor-scan-action@039fa5fca189bf3515a9996b9118406d8b1e9198  # v0.6.0
         with:
           # Maximum coverage: the auditor persona surfaces the widest set
           # of audits, and an informational floor reports every finding
@@ -98,7 +147,9 @@ jobs:
           #
           # Keep these settings identical to the scheduled publisher
           # (zizmor-sarif-publish.yaml) so the default-branch code
-          # scanning posture and this gate always agree.
+          # scanning posture and this gate always agree, and to the
+          # merge-base audit below so the ratchet compares like with
+          # like.
           #
           # zizmor emits both Low and Informational findings at SARIF
           # level 'note', so a note no longer implies a genuine Low
@@ -109,48 +160,91 @@ jobs:
           persona: 'auditor'
           min-severity: 'informational'
 
-      - name: 'Fail on any finding'
+      # The action always writes its SARIF to the same workspace path,
+      # so keep the head report safe before the base audit overwrites
+      # it. A missing head report fails the run, as it always has.
+      - name: 'Preserve head SARIF'
+        id: 'head'
         shell: 'bash'
         env:
           ZIZMOR_SARIF: ${{ steps.audit.outputs['sarif-file'] }}
         run: |
+          # Preserve head SARIF
           set -euo pipefail
-          # zizmor maps severities onto SARIF levels: error=High,
-          # warning=Medium, note=Low or Informational, none=Informational.
-          # The audit above runs with an 'informational' floor, so every
-          # finding zizmor can report reaches the SARIF; fail the run on
-          # any of them, at any level.
-          if [ ! -f "${ZIZMOR_SARIF}" ]; then
+          if [ -z "${ZIZMOR_SARIF}" ] || [ ! -f "${ZIZMOR_SARIF}" ]; then
             echo "::error::zizmor SARIF report not found: ${ZIZMOR_SARIF}"
             exit 1
           fi
-          # The Python lines below sit at the block scalar base
-          # indentation: YAML strips it, so Python receives module-level
-          # code at column 0. Do not re-indent them.
-          n="$(python3 -c '
-          import json, os
-          BLOCK = {"error", "warning", "note", "none"}
-          path = os.environ["ZIZMOR_SARIF"]
-          with open(path, encoding="utf-8") as fh:
-              data = json.load(fh)
-          count = 0
-          for run in data.get("runs", []):
-              drv = run.get("tool", {}).get("driver", {})
-              cfg = {}
-              for rule in drv.get("rules", []):
-                  dc = rule.get("defaultConfiguration", {})
-                  cfg[rule.get("id", "")] = dc.get("level", "warning")
-              for res in run.get("results", []):
-                  lvl = res.get("level")
-                  if not lvl:
-                      lvl = cfg.get(res.get("ruleId", ""), "warning")
-                  if lvl in BLOCK:
-                      count += 1
-          print(count)
-          ')"
-          echo "zizmor reported ${n} finding(s)"
-          if [ "${n}" -gt 0 ]; then
-            echo "::error::zizmor: ${n} finding(s) reported"
-            exit 1
+          kept="${RUNNER_TEMP}/zizmor-head.sarif"
+          cp -- "${ZIZMOR_SARIF}" "${kept}"
+          echo "sarif-file=${kept}" >> "$GITHUB_OUTPUT"
+
+      # Check the merge base out into a detached worktree outside the
+      # workspace. Nothing runs from it except the audit below; it holds
+      # the same trust level as the head checkout. Any failure here
+      # leaves 'ready' unset, so the base audit is skipped and the
+      # ratchet falls back to absolute mode.
+      - name: 'Prepare merge-base worktree'
+        id: 'base_tree'
+        if: >-
+          ${{ github.event_name == 'pull_request'
+          && steps.settings.outputs.mode == 'ratchet' }}
+        continue-on-error: true
+        shell: 'bash'
+        env:
+          BASE_REF: '${{ github.base_ref }}'
+        run: |
+          # Prepare merge-base worktree
+          set -euo pipefail
+          if ! merge_base="$(git merge-base "origin/${BASE_REF}" HEAD)"; then
+            echo "::warning::no merge base with origin/${BASE_REF};" \
+                 'the gate falls back to absolute mode'
+            exit 0
           fi
-          echo 'No findings; passing.'
+          tree="${RUNNER_TEMP}/base"
+          git worktree add --detach "${tree}" "${merge_base}"
+          echo "merge base: ${merge_base}"
+          {
+            echo "path=${tree}"
+            echo "merge-base=${merge_base}"
+            echo 'ready=true'
+          } >> "$GITHUB_OUTPUT"
+
+      # The same pinned action and audit settings as the head audit,
+      # run over the worktree. A failure here must not fail the job:
+      # the ratchet then receives no base SARIF and falls back to
+      # absolute mode. Annotations stay off, so findings the pull
+      # request fixes do not appear on this run.
+      - name: 'Run zizmor audit (merge base)'
+        id: 'base_audit'
+        if: ${{ steps.base_tree.outputs.ready == 'true' }}
+        continue-on-error: true
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/zizmor-scan-action@039fa5fca189bf3515a9996b9118406d8b1e9198  # v0.6.0
+        with:
+          persona: 'auditor'
+          min-severity: 'informational'
+          working-directory: '${{ steps.base_tree.outputs.path }}'
+          annotate: 'false'
+          upload-sarif: 'false'
+          summary-repository: '${{ github.repository }}'
+          summary-sha: '${{ steps.base_tree.outputs.merge-base }}'
+
+      # zizmor maps severities onto SARIF levels: error=High,
+      # warning=Medium, note=Low or Informational, none=Informational.
+      # Every level counts, so the gate blocks on any finding the head
+      # adds (ratchet) or holds (absolute).
+      - name: 'Compare findings with merge base'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/.github/actions/findings-ratchet@e5213ff48fbefb6e3378dc410efe40ea04899205  # v0.20.0
+        with:
+          head-sarif: ${{ steps.head.outputs['sarif-file'] }}
+          # Only a base audit that succeeded counts; anything else
+          # selects absolute mode.
+          # yamllint disable-line rule:line-length
+          base-sarif: ${{ steps.base_audit.outcome == 'success' && steps.base_audit.outputs['sarif-file'] || '' }}
+          head-root: '${{ github.workspace }}'
+          base-root: '${{ steps.base_tree.outputs.path }}'
+          tool: 'zizmor'
+          mode: '${{ steps.settings.outputs.mode }}'
+          levels: 'error,warning,note,none'
