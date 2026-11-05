@@ -1,0 +1,78 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Tests for the findings-ratchet composite action under
+# actions/findings-ratchet, which the organisation pull-request gates
+# will call to block only on findings a change adds.
+
+name: 'Findings Ratchet 🧪'
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'actions/findings-ratchet/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/findings-ratchet.yaml'
+
+permissions: {}
+
+concurrency:
+  group: 'findings-ratchet-${{ github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 'Test findings ratchet'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Load the egress allow-list out-of-band and publish it as
+      # $CONNECTION_ALLOW_LIST for the harden-runner step below.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@2fed66c9c36c4687c31ca349b925b81ec629673f  # v0.15.0
+        with:
+          config: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Checkout repository'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 'Install uv'
+        # yamllint disable-line rule:line-length
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+
+      - name: 'Install locked dependencies'
+        shell: 'bash'
+        run: |
+          set -euo pipefail
+          uv sync --locked
+
+      - name: 'Type-check the action and its tests'
+        shell: 'bash'
+        run: |
+          set -euo pipefail
+          # --venvpath lets basedpyright resolve pytest from the .venv
+          # uv just created; the pre-commit hook skips the tests.
+          uv run basedpyright --venvpath . actions/findings-ratchet
+
+      - name: 'Run the tests'
+        shell: 'bash'
+        run: |
+          set -euo pipefail
+          uv run pytest -q actions/findings-ratchet/tests
