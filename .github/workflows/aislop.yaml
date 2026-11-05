@@ -12,35 +12,82 @@
 # own pull requests.
 #
 # Scope: the scan covers ONLY the files changed on the pull request
-# (aislop --changes --base), not the whole repository, so the check
-# reports on what the PR introduces rather than pre-existing state.
-# The scheduled aislop-sarif-publish.yaml workflow owns whole-repo
-# scanning and default-branch code-scanning SARIF.
+# (aislop --changes --base), not the whole repository. The scheduled
+# aislop-sarif-publish.yaml workflow owns whole-repo scanning and
+# default-branch code-scanning SARIF.
+#
+# Ratchet: on pull_request the gate compares the head scan against a
+# second scan of the merge base, run by the same pinned action over the
+# same files: the files the pull request modifies, as they were before
+# it. The head scan then diffs against the merge base too, not the base
+# branch tip, which may have advanced since the event's merge commit
+# was made ('--base' is a two-dot diff). The base scan runs in a
+# detached worktree under $RUNNER_TEMP with
+# 'aislop --changes --base <head commit>', so it covers the pull
+# request's changed files as the merge base had them, with the base's
+# own configuration and manifests intact. That list also holds the
+# paths the pull request deletes, which the head cannot cover, so the
+# base findings on them are dropped from the base SARIF before the
+# comparison. ('aislop ci' ignores --include and --exclude, so the
+# scope cannot be set on the command line, and nothing is removed from
+# the worktree: a deleted .aislop/config.yml or package.json must still
+# shape the base scan.) The findings-ratchet action from
+# this repository then fails the gate only when the head ADDS findings:
+# a pull request may carry pre-existing findings in the files it
+# touches, and may remove some, but may not add any. When the base
+# cannot be scanned (no merge base, a failed scan, no SARIF or an
+# unusable one, or reduced coverage: see below) the comparison falls
+# back to absolute mode, which fails on any counted head finding in
+# the head SARIF and then applies the absolute gate below to the JSON
+# report too, so it enforces no less than AISLOP_GATE_MODE=absolute; a
+# base-scan failure is never a pass.
+#
+# Gate mode, from the variable AISLOP_GATE_MODE:
+#
+#   ratchet (default)  Fail only on findings the pull request adds.
+#   absolute           Behave exactly as before the ratchet existed:
+#                      fail on every counted finding in the changed
+#                      files, judged from aislop's JSON report and,
+#                      at level 'all', its own exit status. Skips the
+#                      base scan and the comparison.
+#
+# workflow_dispatch has no base, so it always runs in absolute mode.
 #
 # Gating: the scan (delegated to aislop-scan-action, which pins and
-# verifies the aislop CLI) never fails on findings by itself; a
-# separate gate step decides enforcement. The gate level is chosen by
-# the organisation variable AISLOP_GATE_LEVEL:
+# verifies the aislop CLI) never fails on findings by itself; the
+# ratchet and a final gate step decide enforcement. Which findings
+# count is chosen by the organisation variable AISLOP_GATE_LEVEL:
 #
-#   any (default)   Block the run when the pull request's changed
-#                   files carry ANY finding, at any severity: high,
-#                   medium and low all block. This is the "no new
-#                   slop" gate: the scan scope is the changed files,
-#                   so passing it means the pull request is not adding
-#                   findings.
-#   high            Block only on HIGH-severity findings (aislop
+#   any (default)   Count every finding, at any severity: high, medium
+#                   and low all block.
+#   high            Count only HIGH-severity findings (aislop
 #                   error-severity). Medium and low remain advisory.
-#                   The previous default; use it as a per-repository
-#                   escape hatch while a backlog is remediated.
-#   all             Block on the full aislop quality gate (score below
-#                   the configured threshold OR any high-severity
-#                   finding).
+#                   Use it as a per-repository escape hatch while a
+#                   backlog is remediated.
+#   all             Count high-severity findings, and also block on
+#                   the score. In ratchet mode, when the head score
+#                   is lower than the base score: both come from
+#                   aislop over the same scope, so each reflects the
+#                   repository's own configuration. aislop's score
+#                   depends on how many files it scans, so when the
+#                   pull request deletes a path the scores are not
+#                   comparable, and the score is not checked (a
+#                   notice says so); findings are still enforced.
+#                   The same holds when the merge base has no score
+#                   (aislop withholds one when unsupported files
+#                   dominate, while still reporting findings). In
+#                   absolute mode, or when the ratchet falls back to
+#                   it, when aislop's own exit status fails:
+#                   aislop alone applies its threshold, after
+#                   resolving 'extends' and its defaults, and the JSON
+#                   report does not expose it.
 #   off             Advisory only: report via the step summary and
-#                   inline annotations without blocking anything.
+#                   inline annotations without blocking anything. No
+#                   base scan runs.
 #
-# A repository variable of the same name overrides the organisation
-# value, so a repository carrying a pre-existing backlog can sit at
-# 'high' without weakening the estate-wide default.
+# Repository variables of the same names override the organisation
+# values, so a repository can sit at 'high' or 'absolute' without
+# weakening the estate-wide default.
 #
 # For backward compatibility, when AISLOP_GATE_LEVEL is unset the
 # legacy AISLOP_ENFORCE='true' variable still selects the 'all' tier;
@@ -56,6 +103,17 @@
 # fail the change. Set AISLOP_STRICT_COVERAGE='true' (org or
 # repository variable) to make reduced coverage block at the enforcing
 # gate levels instead.
+#
+# aislop-scan-action runs aislop twice, once for the JSON report and
+# once for the SARIF the ratchet reads, so a dependency audit can time
+# out in one run only and a finding vanish from the SARIF alone. In
+# ratchet mode a scan therefore also counts as coverage-degraded when
+# its SARIF carries a coverage notice, or when its JSON and SARIF
+# disagree on the number of findings other than notices. A degraded
+# head scan warns (or, under AISLOP_STRICT_COVERAGE='true', blocks) as
+# above; a degraded base scan is not used, so the ratchet falls back
+# to absolute mode and a finding missing from the base can never
+# excuse one on the head.
 #
 # See README.md ("Organisation-wide aislop scan") for org-admin setup.
 
@@ -84,9 +142,16 @@ jobs:
   audit:
     name: 'Audit changes'
     runs-on: 'ubuntu-latest'
-    timeout-minutes: 15
+    # Room for two scans: the head and, in ratchet mode, the merge base.
+    timeout-minutes: 25
     permissions:
       contents: read
+    env:
+      # aislop's coverage notices: diagnostics that record visibility
+      # loss rather than a defect. Keep in step with COVERAGE_RULES in
+      # aislop-scan-action's .github/scripts/aislop_coverage.py.
+      # yamllint disable-line rule:line-length
+      AISLOP_COVERAGE_RULES: 'security/dependency-audit-skipped,dotnet/projects-skipped,cppcheck/chunks-skipped'
     steps:
       # Load the egress allow-list out-of-band from
       # lfreleng-actions/.github and publish it as
@@ -114,41 +179,23 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: 'Run aislop quality gate (changed files)'
-        id: 'scan'
-        # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/aislop-scan-action@293cd6e5dbb9d9848912c658a999ec04ca0043da  # v0.3.3
-        with:
-          # On pull_request events the diff base is the PR base branch;
-          # on workflow_dispatch fall back to the default branch (an
-          # empty diff, so the run is a no-op smoke test).
-          scan-mode: 'changes'
-          # yamllint disable-line rule:line-length
-          base: 'origin/${{ github.base_ref || github.event.repository.default_branch }}'
-
-      - name: 'Enforce quality gate'
+      # Resolve and validate the gate settings before any scan runs,
+      # so a mistyped variable fails fast rather than after the scans.
+      - name: 'Resolve gate settings'
+        id: 'settings'
         shell: 'bash'
         env:
-          # Gate level: 'any' (default) blocks on any finding at any
-          # severity on the changed files; 'high' blocks on
-          # high-severity only; 'all' blocks on the full aislop gate;
-          # 'off' keeps the run advisory. AISLOP_ENFORCE is the legacy
-          # switch honoured only when AISLOP_GATE_LEVEL is unset.
           AISLOP_GATE_LEVEL: '${{ vars.AISLOP_GATE_LEVEL }}'
           AISLOP_ENFORCE: '${{ vars.AISLOP_ENFORCE }}'
-          # 'true' makes reduced scan coverage block at the enforcing
-          # gate levels; by default it only warns.
-          AISLOP_STRICT_COVERAGE: '${{ vars.AISLOP_STRICT_COVERAGE }}'
-          SCAN_RC: '${{ steps.scan.outputs.exit-code }}'
-          REPORT_FILE: '${{ steps.scan.outputs.report-file }}'
-          ENGINES_READY: '${{ steps.scan.outputs.engines-ready }}'
+          AISLOP_GATE_MODE: '${{ vars.AISLOP_GATE_MODE }}'
+          EVENT_NAME: '${{ github.event_name }}'
         run: |
-          # Enforce quality gate
+          # Resolve gate settings
           set -euo pipefail
 
-          # Resolve the effective gate level. AISLOP_GATE_LEVEL wins;
-          # when it is unset, the legacy AISLOP_ENFORCE='true' selects
-          # the strict 'all' tier, otherwise the default is 'any'.
+          # AISLOP_GATE_LEVEL wins; when it is unset, the legacy
+          # AISLOP_ENFORCE='true' selects the strict 'all' tier,
+          # otherwise the default is 'any'.
           level="${AISLOP_GATE_LEVEL:-}"
           if [ -z "${level}" ]; then
             if [ "${AISLOP_ENFORCE:-}" = 'true' ]; then
@@ -157,14 +204,408 @@ jobs:
               level='any'
             fi
           fi
+          # SARIF levels that count: aislop maps error to 'error',
+          # warning to 'warning' and info to 'note'.
           case "${level}" in
-            any|high|all|off) ;;
+            any) levels='error,warning,note,none' ;;
+            high|all) levels='error' ;;
+            off) levels='' ;;
             *)
               echo "::error::invalid AISLOP_GATE_LEVEL '${level}';" \
                    "expected 'any', 'high', 'all', or 'off'"
               exit 1
               ;;
           esac
+
+          mode="${AISLOP_GATE_MODE:-ratchet}"
+          case "${mode}" in
+            ratchet|absolute) ;;
+            *)
+              echo "::error::invalid AISLOP_GATE_MODE '${mode}';" \
+                   "expected 'ratchet' or 'absolute'"
+              exit 1
+              ;;
+          esac
+          # Only a pull request has a base to compare against.
+          if [ "${EVENT_NAME}" != 'pull_request' ]; then
+            mode='absolute'
+          fi
+
+          echo "aislop gate level: ${level}; gate mode: ${mode}"
+          {
+            echo "level=${level}"
+            echo "levels=${levels}"
+            echo "mode=${mode}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Resolve the merge base before the head scan, so both scans diff
+      # against the same commit. aislop's --base is a two-dot diff, and
+      # the base branch can advance after the event's merge commit was
+      # made: diffing the head against the branch tip would then also
+      # scan files changed only upstream, which the base scan does not
+      # cover, and count their findings as new. Any failure here leaves
+      # 'sha' unset: the head scan diffs against the base branch as in
+      # absolute mode, the base scan is skipped and the ratchet falls
+      # back to absolute mode.
+      - name: 'Resolve merge base'
+        id: 'merge_base'
+        if: >-
+          ${{ github.event_name == 'pull_request'
+          && steps.settings.outputs.mode == 'ratchet'
+          && steps.settings.outputs.level != 'off' }}
+        continue-on-error: true
+        shell: 'bash'
+        env:
+          BASE_REF: '${{ github.base_ref }}'
+        run: |
+          # Resolve merge base
+          set -euo pipefail
+          if ! merge_base="$(git merge-base "origin/${BASE_REF}" HEAD)"; then
+            echo "::warning::no merge base with origin/${BASE_REF};" \
+                 'the gate falls back to absolute mode'
+            exit 0
+          fi
+          echo "merge base: ${merge_base}"
+          echo "sha=${merge_base}" >> "$GITHUB_OUTPUT"
+
+      - name: 'Run aislop quality gate (changed files)'
+        id: 'scan'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/aislop-scan-action@293cd6e5dbb9d9848912c658a999ec04ca0043da  # v0.3.3
+        with:
+          # In ratchet mode the diff base is the merge base resolved
+          # above, the commit the base scan below covers, so the ratchet
+          # compares like with like. Otherwise (absolute mode, level
+          # 'off', or no merge base) it is the PR base branch, as before
+          # the ratchet existed; on workflow_dispatch the default branch
+          # (an empty diff, so the run is a no-op smoke test).
+          scan-mode: 'changes'
+          base: >-
+            ${{ steps.merge_base.outputs.sha
+            || format('origin/{0}', github.base_ref
+            || github.event.repository.default_branch) }}
+
+      # Check the merge base out into a detached worktree outside the
+      # workspace. Nothing runs from it except the scanner below; it
+      # holds the same trust level as the head checkout. Any failure
+      # here leaves 'ready' unset, so the base scan is skipped and the
+      # ratchet falls back to absolute mode.
+      - name: 'Prepare merge-base worktree'
+        id: 'base_tree'
+        if: ${{ steps.merge_base.outputs.sha != '' }}
+        continue-on-error: true
+        shell: 'bash'
+        env:
+          MERGE_BASE: '${{ steps.merge_base.outputs.sha }}'
+        run: |
+          # Prepare merge-base worktree
+          set -euo pipefail
+          merge_base="${MERGE_BASE}"
+          head_sha="$(git rev-parse HEAD)"
+          tree="${RUNNER_TEMP}/base"
+          git worktree add --detach "${tree}" "${merge_base}"
+          # The base scan diffs the worktree against the head commit,
+          # which lists the files the pull request modifies and also
+          # those it deletes. The worktree stays exactly as the merge
+          # base was: deleting a path here would also drop scanner
+          # configuration and manifests (.aislop/config.yml,
+          # package.json, pyproject.toml, ...) from the base scan and
+          # let findings the head newly enables pass as pre-existing.
+          # 'aislop ci' ignores --exclude as it ignores --include, so
+          # the deleted paths are recorded here and their findings are
+          # dropped from the base SARIF after the scan instead.
+          deleted="${RUNNER_TEMP}/aislop-base-deleted"
+          git diff --name-only --no-renames --diff-filter=D -z \
+            "${merge_base}" HEAD > "${deleted}"
+          deletes='false'
+          if [ -s "${deleted}" ]; then
+            deletes='true'
+          fi
+          echo "merge base: ${merge_base}; head: ${head_sha};" \
+               "pull request deletes paths: ${deletes}"
+          {
+            echo "path=${tree}"
+            echo "merge-base=${merge_base}"
+            echo "head-sha=${head_sha}"
+            echo "deleted=${deleted}"
+            echo "deletes=${deletes}"
+            echo 'ready=true'
+          } >> "$GITHUB_OUTPUT"
+
+      # The same pinned action and inputs as the head scan, run over
+      # the worktree. A failure here must not fail the job: the ratchet
+      # then receives no base SARIF and falls back to absolute mode.
+      - name: 'Run aislop quality gate (merge base)'
+        id: 'base_scan'
+        if: ${{ steps.base_tree.outputs.ready == 'true' }}
+        continue-on-error: true
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/aislop-scan-action@293cd6e5dbb9d9848912c658a999ec04ca0043da  # v0.3.3
+        with:
+          scan-mode: 'changes'
+          base: '${{ steps.base_tree.outputs.head-sha }}'
+          working-directory: '${{ steps.base_tree.outputs.path }}'
+          annotate: 'false'
+          upload-sarif: 'false'
+          summary-repository: '${{ github.repository }}'
+          summary-sha: '${{ steps.base_tree.outputs.merge-base }}'
+
+      # aislop-scan-action writes the JSON report and the SARIF from
+      # two separate aislop runs, so a dependency audit can time out in
+      # one of them only, and a finding then vanishes from the SARIF
+      # the ratchet reads. Count a scan as coverage-degraded when its
+      # SARIF carries a coverage notice, or when its JSON and SARIF
+      # disagree on the number of other findings; for the base, also
+      # when its JSON carries a notice or an engine binary is missing.
+      # A degraded base is not used (the ratchet falls back to absolute
+      # mode), and any base error counts as degraded. The head detail
+      # feeds the coverage warning in the gate step; a failure to read
+      # the head reports fails this step, and the gate then fails
+      # closed. Python runs isolated ('-I') here and below: these steps
+      # run in the pull request's checkout, whose modules must never be
+      # imported by the gate.
+      - name: 'Check scan coverage'
+        id: 'coverage'
+        if: >-
+          ${{ steps.settings.outputs.mode == 'ratchet'
+          && steps.settings.outputs.level != 'off' }}
+        continue-on-error: true
+        shell: 'bash'
+        env:
+          HEAD_REPORT: ${{ steps.scan.outputs['report-file'] }}
+          HEAD_SARIF: ${{ steps.scan.outputs['sarif-file'] }}
+          # yamllint disable-line rule:line-length
+          BASE_REPORT: ${{ steps.base_scan.outcome == 'success' && steps.base_scan.outputs['report-file'] || '' }}
+          # yamllint disable-line rule:line-length
+          BASE_SARIF: ${{ steps.base_scan.outcome == 'success' && steps.base_scan.outputs['sarif-file'] || '' }}
+          BASE_ENGINES: ${{ steps.base_scan.outputs['engines-ready'] }}
+        run: |
+          # Check scan coverage
+          set -euo pipefail
+          python3 -I - <<'EOF'
+          import json
+          import os
+
+          listed = os.environ["AISLOP_COVERAGE_RULES"]
+          notice = {rule for rule in listed.split(",") if rule}
+
+
+          def rule_id(result, rules):
+              if isinstance(result.get("ruleId"), str):
+                  return result["ruleId"]
+              rule = result.get("rule")
+              if isinstance(rule, dict):
+                  if isinstance(rule.get("id"), str):
+                      return rule["id"]
+                  index = rule.get("index")
+              else:
+                  index = result.get("ruleIndex")
+              if isinstance(index, int) and 0 <= index < len(rules):
+                  found = rules[index].get("id")
+                  if isinstance(found, str):
+                      return found
+              return ""
+
+
+          def load(path):
+              with open(path, encoding="utf-8") as handle:
+                  return json.load(handle)
+
+
+          def json_findings(path):
+              diagnostics = load(path)["diagnostics"]
+              if not isinstance(diagnostics, list):
+                  raise ValueError(f"{path}: no diagnostics array")
+              return [(d.get("rule") or "", d.get("message") or "")
+                      for d in diagnostics]
+
+
+          def sarif_findings(path):
+              found = []
+              for run in load(path)["runs"]:
+                  rules = run.get("tool", {}).get("driver", {}).get("rules")
+                  for result in run["results"]:
+                      text = (result.get("message") or {}).get("text")
+                      found.append((rule_id(result, rules or []), text or ""))
+              return found
+
+
+          def notices(findings):
+              return [f"{rule}: {text}" for rule, text in findings
+                      if rule in notice]
+
+
+          def check(report, sarif, with_json):
+              in_json = json_findings(report)
+              in_sarif = sarif_findings(sarif)
+              reasons = []
+              if with_json and notices(in_json):
+                  reasons.append("JSON report: " + "; ".join(notices(in_json)))
+              if notices(in_sarif):
+                  reasons.append("SARIF: " + "; ".join(notices(in_sarif)))
+              json_count = len(in_json) - len(notices(in_json))
+              sarif_count = len(in_sarif) - len(notices(in_sarif))
+              if json_count != sarif_count:
+                  reasons.append(
+                      f"the JSON report holds {json_count} finding(s) and"
+                      f" the SARIF {sarif_count}; aislop's two runs disagree"
+                  )
+              return "; ".join(reasons)
+
+
+          def one_line(text):
+              return " ".join(text.split())
+
+
+          def escape(text):
+              return one_line(text).replace("%", "%25")
+
+
+          env = os.environ
+          head = check(env["HEAD_REPORT"], env["HEAD_SARIF"], False)
+          base_degraded = ""
+          base = ""
+          if env["BASE_REPORT"] and env["BASE_SARIF"]:
+              try:
+                  base = check(env["BASE_REPORT"], env["BASE_SARIF"], True)
+              except (OSError, ValueError, KeyError, TypeError,
+                      AttributeError) as error:
+                  base = f"cannot read the merge-base reports ({error})"
+              if env.get("BASE_ENGINES", "true") != "true":
+                  missing = "engine binaries missing"
+                  base = f"{base}; {missing}" if base else missing
+              base_degraded = "true" if base else "false"
+          print(f"head scan coverage: {one_line(head) or 'complete'}")
+          if base:
+              print(f"::warning::the merge-base scan ran with reduced coverage"
+                    f" ({escape(base)}); the gate falls back to absolute mode")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"head-detail={one_line(head)}\n")
+              out.write(f"base-degraded={base_degraded}\n")
+              out.write(f"base-detail={one_line(base)}\n")
+          EOF
+
+      # Drop the base findings on paths the pull request deletes, which
+      # the head scan cannot cover, so both sides count the same files.
+      # The path is normalised as findings-ratchet normalises it. A
+      # degraded base scan is skipped here, and any failure leaves no
+      # scoped SARIF: either way the ratchet falls back to absolute
+      # mode.
+      - name: 'Scope merge-base findings'
+        id: 'base_scope'
+        if: >-
+          ${{ steps.base_scan.outcome == 'success'
+          && steps.coverage.outcome == 'success'
+          && steps.coverage.outputs['base-degraded'] == 'false' }}
+        continue-on-error: true
+        shell: 'bash'
+        env:
+          BASE_SARIF: ${{ steps.base_scan.outputs['sarif-file'] }}
+          BASE_ROOT: '${{ steps.base_tree.outputs.path }}'
+          DELETED: '${{ steps.base_tree.outputs.deleted }}'
+        run: |
+          # Scope merge-base findings
+          set -euo pipefail
+          scoped="${RUNNER_TEMP}/aislop-base-scoped.sarif"
+          python3 -I - "${BASE_SARIF}" "${BASE_ROOT}" "${DELETED}" \
+            "${scoped}" <<'EOF'
+          import json
+          import posixpath
+          import sys
+          from urllib.parse import unquote
+
+          sarif, root, deleted_list, scoped = sys.argv[1:]
+          root = posixpath.normpath(root.replace("\\", "/")).rstrip("/")
+
+
+          def normalise(uri):
+              path = unquote(uri.removeprefix("file://")).replace("\\", "/")
+              if not path:
+                  return ""
+              path = posixpath.normpath(path)
+              if path.startswith(root + "/"):
+                  path = path[len(root) + 1 :]
+              return path
+
+
+          with open(deleted_list, "rb") as handle:
+              deleted = {
+                  posixpath.normpath(name.decode("utf-8", "surrogateescape"))
+                  for name in handle.read().split(b"\0")
+                  if name
+              }
+          with open(sarif, encoding="utf-8") as handle:
+              log = json.load(handle)
+          dropped = 0
+          for run in log["runs"]:
+              kept = []
+              for result in run["results"]:
+                  locations = result.get("locations") or [{}]
+                  physical = locations[0].get("physicalLocation") or {}
+                  uri = (physical.get("artifactLocation") or {}).get("uri")
+                  if isinstance(uri, str) and normalise(uri) in deleted:
+                      dropped += 1
+                      continue
+                  kept.append(result)
+              run["results"] = kept
+          with open(scoped, "w", encoding="utf-8") as handle:
+              json.dump(log, handle)
+          print(f"dropped {dropped} base finding(s) on deleted paths")
+          EOF
+          echo "sarif-file=${scoped}" >> "$GITHUB_OUTPUT"
+
+      # Compare the head findings against the base. The verdict is
+      # read by the gate step below, which also handles coverage and
+      # the score, so this step never fails the job by itself. Absolute
+      # mode keeps the gate as it was before the ratchet, so it skips
+      # the comparison.
+      - name: 'Compare findings with merge base'
+        id: 'ratchet'
+        if: >-
+          ${{ steps.settings.outputs.mode == 'ratchet'
+          && steps.settings.outputs.level != 'off' }}
+        continue-on-error: true
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/.github/actions/findings-ratchet@e5213ff48fbefb6e3378dc410efe40ea04899205  # v0.20.0
+        with:
+          head-sarif: ${{ steps.scan.outputs['sarif-file'] }}
+          # Only a base scan that succeeded and was scoped counts;
+          # anything else selects absolute mode.
+          # yamllint disable-line rule:line-length
+          base-sarif: ${{ steps.base_scope.outcome == 'success' && steps.base_scope.outputs['sarif-file'] || '' }}
+          head-root: '${{ github.workspace }}'
+          base-root: '${{ steps.base_tree.outputs.path }}'
+          tool: 'aislop'
+          mode: 'ratchet'
+          levels: '${{ steps.settings.outputs.levels }}'
+          exclude-rules: '${{ env.AISLOP_COVERAGE_RULES }}'
+
+      - name: 'Enforce quality gate'
+        shell: 'bash'
+        env:
+          # Resolved by the settings step from AISLOP_GATE_LEVEL and the
+          # legacy AISLOP_ENFORCE.
+          GATE_LEVEL: '${{ steps.settings.outputs.level }}'
+          # 'true' makes reduced scan coverage block at the enforcing
+          # gate levels; by default it only warns.
+          AISLOP_STRICT_COVERAGE: '${{ vars.AISLOP_STRICT_COVERAGE }}'
+          SCAN_RC: '${{ steps.scan.outputs.exit-code }}'
+          REPORT_FILE: '${{ steps.scan.outputs.report-file }}'
+          ENGINES_READY: '${{ steps.scan.outputs.engines-ready }}'
+          GATE_MODE: '${{ steps.settings.outputs.mode }}'
+          COVERAGE_OUTCOME: '${{ steps.coverage.outcome }}'
+          HEAD_COVERAGE: ${{ steps.coverage.outputs['head-detail'] }}
+          HEAD_SCORE: '${{ steps.scan.outputs.score }}'
+          BASE_SCORE: '${{ steps.base_scan.outputs.score }}'
+          DELETES: '${{ steps.base_tree.outputs.deletes }}'
+          VERDICT: ${{ steps.ratchet.outputs.verdict }}
+          EFFECTIVE_MODE: ${{ steps.ratchet.outputs['effective-mode'] }}
+          NEW_COUNT: ${{ steps.ratchet.outputs['new-count'] }}
+          FIXED_COUNT: ${{ steps.ratchet.outputs['fixed-count'] }}
+        run: |
+          # Enforce quality gate
+          set -euo pipefail
+          level="${GATE_LEVEL}"
 
           # Coverage notices are excluded from every finding count.
           # aislop emits them when an audit or analyzer could not run
@@ -174,13 +615,11 @@ jobs:
           # a registry outage into "a pull request must not add
           # findings", which blames the change for something it did
           # not do. They are reported separately, at every gate level.
-          # The list is explicit by rule: aislop's 'advisory' score
-          # tier, which these share, also holds ordinary style
-          # findings. Keep it in step with COVERAGE_RULES in
-          # aislop-scan-action's .github/scripts/aislop_coverage.py.
-          notice='["security/dependency-audit-skipped",
-                   "dotnet/projects-skipped",
-                   "cppcheck/chunks-skipped"]'
+          # The list is explicit by rule (AISLOP_COVERAGE_RULES, set
+          # on the job): aislop's 'advisory' score tier, which these
+          # share, also holds ordinary style findings.
+          notice="$(jq -cn --arg rules "${AISLOP_COVERAGE_RULES}" \
+                    '$rules | split(",")')"
           # Run a jq program against the report with is_notice defined.
           report_jq() {
             jq -r --argjson notice "${notice}" \
@@ -199,10 +638,12 @@ jobs:
             printf '%s' "${s}"
           }
           # Reduced coverage: a coverage notice, or a required engine
-          # binary the action could not provision. Either way the
-          # score may be inflated and a clean result is not
-          # conclusive. Warn by default so the condition is visible on
-          # the run as an infrastructure problem rather than as a
+          # binary the action could not provision; in ratchet mode also
+          # a coverage notice in the SARIF, or a JSON report and SARIF
+          # that disagree (HEAD_COVERAGE, from the coverage step).
+          # Either way the score may be inflated and a clean result is
+          # not conclusive. Warn by default so the condition is visible
+          # on the run as an infrastructure problem rather than as a
           # finding; block only when the estate opts in, and only at
           # an enforcing level ('off' never blocks). Sets 'advisory'
           # and 'degraded'; a missing report leaves both at zero.
@@ -215,7 +656,8 @@ jobs:
                                      | length')"
             fi
             if [ "${advisory}" = '0' ] \
-               && [ "${ENGINES_READY:-true}" = 'true' ]; then
+               && [ "${ENGINES_READY:-true}" = 'true' ] \
+               && [ -z "${HEAD_COVERAGE:-}" ]; then
               return 0
             fi
             degraded='true'
@@ -229,6 +671,9 @@ jobs:
             fi
             if [ "${ENGINES_READY:-true}" != 'true' ]; then
               detail="${detail:+${detail}; }engine binaries missing"
+            fi
+            if [ -n "${HEAD_COVERAGE:-}" ]; then
+              detail="${detail:+${detail}; }${HEAD_COVERAGE}"
             fi
             msg='aislop ran with reduced coverage, so this result is not'
             msg="${msg} conclusive: ${detail}. This is a tooling or"
@@ -303,6 +748,16 @@ jobs:
           # severity, so a severity this gate does not name still
           # blocks.
           total="$(report_jq "[${finding}] | length")"
+          # In ratchet mode the coverage step checks the SARIF the
+          # ratchet reads against the JSON report. A check that never
+          # ran or broke cannot vouch for that SARIF, so fail closed.
+          if [ "${GATE_MODE}" = 'ratchet' ] \
+             && [ "${COVERAGE_OUTCOME}" != 'success' ]; then
+            echo "::error::cannot check the aislop scan coverage" \
+                 "(coverage step: '${COVERAGE_OUTCOME}'); cannot" \
+                 "evaluate gate"
+            exit 1
+          fi
           report_coverage enforcing
           echo "aislop findings on changed files: ${total}" \
                "(high ${high}, medium ${medium}, low ${low});" \
@@ -310,55 +765,193 @@ jobs:
           echo "aislop gate exit code: ${SCAN_RC}"
           echo "coverage degraded: ${degraded}"
 
-          case "${level}" in
-            any)
-              # The scan scope is the changed files, so a finding here
-              # is one this pull request adds, or leaves behind in code
-              # it touched. Every severity blocks, low included.
-              if [ "${total}" != '0' ]; then
-                echo "::error::aislop quality gate failed:" \
-                     "${total} finding(s) on the changed files" \
-                     "(high ${high}, medium ${medium}, low ${low});" \
-                     "a pull request must not add findings." \
-                     "Remediate them, or set the repository variable" \
-                     "AISLOP_GATE_LEVEL=high while an existing backlog" \
-                     "is cleared."
+          # Ratchet mode: the findings ratchet decides which counted
+          # findings block, those the pull request adds, or every one
+          # in the head SARIF when it fell back to absolute mode. No
+          # verdict means the comparison never ran or broke, and that
+          # must not read as a pass.
+          if [ "${GATE_MODE}" = 'ratchet' ]; then
+            case "${VERDICT}" in
+              pass|fail) ;;
+              *)
+                echo "::error::findings ratchet produced no verdict;" \
+                     "cannot evaluate gate"
                 exit 1
-              fi
-              if [ "${SCAN_RC}" != '0' ]; then
-                msg='aislop score gate did not pass (advisory at the'
-                msg="${msg} 'any' gate level; set AISLOP_GATE_LEVEL=all"
-                msg="${msg} to enforce the score threshold too)"
-                echo "::warning::${msg}"
-              fi
-              echo 'aislop quality gate passed (no findings).'
+                ;;
+            esac
+            echo "findings ratchet (${EFFECTIVE_MODE}): ${VERDICT};" \
+                 "new ${NEW_COUNT}, fixed ${FIXED_COUNT}"
+            if [ "${EFFECTIVE_MODE}" = 'ratchet' ]; then
+              what='new finding(s) added by this pull request'
+            else
+              what='finding(s) on the changed files'
+            fi
+            counted='high-severity '
+            hint=''
+            if [ "${level}" = 'any' ]; then
+              counted=''
+              hint=' Remediate them, or set the repository variable'
+              hint="${hint} AISLOP_GATE_LEVEL=high to count high severity"
+              hint="${hint} alone while a backlog is cleared."
+            fi
+            if [ "${VERDICT}" != 'pass' ]; then
+              echo "::error::aislop quality gate failed:" \
+                   "${NEW_COUNT} ${counted}${what}" \
+                   "(gate level '${level}', mode '${EFFECTIVE_MODE}');" \
+                   "a pull request must not add findings.${hint}"
+              exit 1
+            fi
+          fi
+
+          # Absolute mode is the gate as it was before the ratchet:
+          # findings judged from the JSON report, and at 'all' aislop's
+          # own exit status, the only place aislop applies its score
+          # threshold itself. A ratchet that fell back to absolute mode
+          # runs it too, after its own verdict on the head SARIF: the
+          # JSON report comes from a separate aislop run, so a finding
+          # it holds can be missing from the SARIF (a dependency audit
+          # that timed out there alone), and an unusable base must
+          # enforce no less than AISLOP_GATE_MODE=absolute does.
+          if [ "${GATE_MODE}" = 'absolute' ] \
+             || [ "${EFFECTIVE_MODE}" != 'ratchet' ]; then
+            if [ "${GATE_MODE}" = 'ratchet' ]; then
+              echo 'no usable merge base: applying the absolute gate to' \
+                   'the JSON report as well'
+            fi
+            case "${level}" in
+              any)
+                # The scan scope is the changed files, so a finding
+                # here is one this pull request adds, or leaves behind
+                # in code it touched. Every severity blocks, low
+                # included.
+                if [ "${total}" != '0' ]; then
+                  echo "::error::aislop quality gate failed:" \
+                       "${total} finding(s) on the changed files" \
+                       "(high ${high}, medium ${medium}, low ${low});" \
+                       "a pull request must not add findings." \
+                       "Remediate them, or set the repository variable" \
+                       "AISLOP_GATE_LEVEL=high while an existing backlog" \
+                       "is cleared."
+                  exit 1
+                fi
+                if [ "${SCAN_RC}" != '0' ]; then
+                  msg='aislop score gate did not pass (advisory at the'
+                  msg="${msg} 'any' gate level; set AISLOP_GATE_LEVEL=all"
+                  msg="${msg} to enforce the score threshold too)"
+                  echo "::warning::${msg}"
+                fi
+                echo 'aislop quality gate passed (no findings).'
+                ;;
+              high)
+                if [ "${high}" != '0' ]; then
+                  echo "::error::aislop quality gate failed:" \
+                       "${high} high-severity finding(s) on this" \
+                       "pull request"
+                  exit 1
+                fi
+                if [ "${SCAN_RC}" != '0' ]; then
+                  msg='aislop score gate did not pass (advisory at the'
+                  msg="${msg} 'high' gate level; set AISLOP_GATE_LEVEL=all"
+                  msg="${msg} to enforce it)"
+                  echo "::warning::${msg}"
+                fi
+                echo 'aislop quality gate passed (no high-severity findings).'
+                ;;
+              all)
+                # Fail on the full aislop gate. aislop ci already exits
+                # non-zero on any high-severity finding, but check high
+                # explicitly too so the tier matches its documented
+                # "score below threshold OR any high-severity finding"
+                # even if that coupling ever changes.
+                if [ "${high}" != '0' ] || [ "${SCAN_RC}" != '0' ]; then
+                  echo "::error::aislop quality gate failed" \
+                       "(rc=${SCAN_RC}; ${high} high-severity finding(s))"
+                  exit 1
+                fi
+                echo 'aislop quality gate passed.'
+                ;;
+            esac
+            exit 0
+          fi
+
+          # Ratchet mode with a usable base: the score check. The
+          # workflow never computes a threshold: aislop resolves
+          # 'extends' and its own defaults before it applies
+          # 'ci.failBelow', and its JSON report exposes the
+          # score but not the threshold, so a lookup here would
+          # re-implement aislop's configuration loader and drift. Sets
+          # score_state to 'pass', 'fail', 'skip' or 'error', and
+          # score_msg.
+          score_check() {
+            local number='^[0-9]+([.][0-9]+)?$' scoreable
+            # aislop's score depends on how many files it scans, so a
+            # base scan that still covers paths the pull request
+            # deletes has no comparable score.
+            if [ "${DELETES}" = 'true' ]; then
+              score_state='skip'
+              score_msg='the pull request deletes paths, so the head and'
+              score_msg="${score_msg} merge-base scores cover different"
+              score_msg="${score_msg} files; score not compared (findings"
+              score_msg="${score_msg} are still enforced)"
+              return 0
+            fi
+            scoreable="$(jq -r 'if .scoreable == false then "false"
+                                else "true" end' "${REPORT_FILE}")"
+            if [ "${scoreable}" = 'false' ]; then
+              score_state='pass'
+              score_msg='no scoreable files in scope; no score to check'
+              return 0
+            fi
+            if ! [[ "${HEAD_SCORE}" =~ ${number} ]]; then
+              score_state='error'
+              score_msg="no aislop score on the head ('${HEAD_SCORE}')"
+              return 0
+            fi
+            # aislop withholds a score when unsupported files dominate
+            # the repository, yet still reports findings in the files
+            # it supports, so a base with no score may hold findings.
+            # aislop's exit status would count those again after the
+            # ratchet has judged them, so skip the check instead.
+            if ! [[ "${BASE_SCORE}" =~ ${number} ]]; then
+              score_state='skip'
+              score_msg="the merge base has no aislop score, so the head"
+              score_msg="${score_msg} score ${HEAD_SCORE} has nothing to be"
+              score_msg="${score_msg} compared with; score not compared"
+              score_msg="${score_msg} (findings are still enforced)"
+              return 0
+            fi
+            if awk -v h="${HEAD_SCORE}" -v b="${BASE_SCORE}" \
+                 'BEGIN { exit !(h + 0 < b + 0) }'; then
+              score_state='fail'
+              score_msg="score ${HEAD_SCORE} is lower than the merge"
+              score_msg="${score_msg} base score ${BASE_SCORE}"
+            else
+              score_state='pass'
+              score_msg="score ${HEAD_SCORE} (merge base ${BASE_SCORE})"
+            fi
+          }
+          score_check
+          echo "aislop score check: ${score_state}; ${score_msg}"
+
+          case "${score_state}" in
+            skip)
+              echo "::notice::aislop score check skipped: ${score_msg}"
               ;;
-            high)
-              if [ "${high}" != '0' ]; then
-                echo "::error::aislop quality gate failed:" \
-                     "${high} high-severity finding(s) on this" \
-                     "pull request"
-                exit 1
-              fi
-              if [ "${SCAN_RC}" != '0' ]; then
-                msg='aislop score gate did not pass (advisory at the'
-                msg="${msg} 'high' gate level; set AISLOP_GATE_LEVEL=all"
-                msg="${msg} to enforce it)"
-                echo "::warning::${msg}"
-              fi
-              echo 'aislop quality gate passed (no high-severity findings).'
-              ;;
-            all)
-              # Fail on the full aislop gate. aislop ci already exits
-              # non-zero on any high-severity finding, but check high
-              # explicitly too so the tier matches its documented
-              # "score below threshold OR any high-severity finding"
-              # even if that coupling ever changes.
-              if [ "${high}" != '0' ] || [ "${SCAN_RC}" != '0' ]; then
-                echo "::error::aislop quality gate failed (rc=${SCAN_RC};" \
-                     "${high} high-severity finding(s))"
-                exit 1
-              fi
-              echo 'aislop quality gate passed.'
+            pass) ;;
+            *)
+              case "${level}" in
+                any|high)
+                  msg="aislop score check did not pass: ${score_msg}"
+                  msg="${msg} (advisory at the '${level}' gate level; set"
+                  msg="${msg} AISLOP_GATE_LEVEL=all to enforce it)"
+                  echo "::warning::${msg}"
+                  ;;
+                all)
+                  echo "::error::aislop quality gate failed: ${score_msg}"
+                  exit 1
+                  ;;
+              esac
               ;;
           esac
+          echo "aislop quality gate passed (gate level '${level}'," \
+               "mode '${EFFECTIVE_MODE}')."

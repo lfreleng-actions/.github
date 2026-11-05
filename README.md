@@ -103,9 +103,11 @@ level. Each entry below says how the rest reach repositories.
   static security audit of GitHub Actions workflows and composite actions
   using [zizmor](https://docs.zizmor.sh/). Runs on every pull request
   and push, uploads results to GitHub code scanning as SARIF on pushes
-  to the default branch after merge, and runs in **advisory mode**
-  (does not block merges), and the workflow runs across the
-  organisation as a *required workflow* via an organisation ruleset;
+  to the default branch after merge, and **blocks** a pull request
+  that **adds** a finding relative to its merge base (a *ratchet*:
+  pre-existing findings do not block). The `ZIZMOR_GATE_MODE`
+  variable selects `absolute` mode instead. The workflow runs across
+  the organisation as a *required workflow* via an organisation ruleset;
   see [Organisation-wide zizmor audit](#organisation-wide-zizmor-audit)
   below for the one-time org-admin configuration.
 - **[`zizmor-sarif-publish.yaml`](.github/workflows/zizmor-sarif-publish.yaml)**
@@ -121,9 +123,11 @@ level. Each entry below says how the rest reach repositories.
   [aislop](https://github.com/scanaislop/aislop). Runs on every pull
   request across the organisation as a *required workflow* via an
   organisation ruleset, scans **the files the PR changes** (not the
-  whole repository), and **blocks** a pull request whose changed files
-  carry any finding, at any severity. The `AISLOP_GATE_LEVEL`
-  organisation or repository variable relaxes or tightens that; see
+  whole repository), and **blocks** a pull request that **adds** a
+  finding to those files relative to its merge base, at any severity
+  (a *ratchet*: pre-existing findings do not block). The
+  `AISLOP_GATE_LEVEL` and `AISLOP_GATE_MODE` organisation or
+  repository variables relax or tighten that; see
   [Organisation-wide aislop scan](#organisation-wide-aislop-scan) below
   for the one-time org-admin configuration.
 - **[`aislop-sarif-publish.yaml`](.github/workflows/aislop-sarif-publish.yaml)**
@@ -250,17 +254,39 @@ and more.
   on PRs would publish unreviewed findings before reviewers approve
   the change. Findings appear in each repository's **Security → Code
   scanning** tab once the change lands on the default branch.
-- **Severity floor**: `low` (the workflow reports findings down to the
-  low tier; the informational and unknown tiers stay out to limit
-  noise).
+- **Severity floor**: `informational` (the workflow reports every
+  finding zizmor can produce).
 - **Persona**: `auditor` (the broadest persona; it runs the extra audit
   types on top of the default high-signal set).
-- **Advisory**: zizmor exits `0` when emitting SARIF, so the workflow
-  always reports success in the PR checks UI. Merge-blocking remains
-  **disabled** at the workflow level on purpose. After the team
-  triages the pre-existing finding backlog across the organisation, an
-  org-level **code-scanning ruleset** can switch selected findings to
-  merge-blocking (see *Promoting findings to merge-blocking* below).
+- **Gating**: zizmor exits `0` when emitting SARIF, so a separate step
+  decides the result. On a pull request the workflow also audits the
+  **merge base** (in a detached worktree, with the same settings) and
+  compares the two SARIF reports through the
+  [`findings-ratchet`](actions/findings-ratchet) action. The
+  **`ZIZMOR_GATE_MODE`** organisation or repository variable selects
+  the comparison:
+  - **`ratchet`** (the default when the variable is unset) — the run
+    **fails** when the pull request **adds** a finding, at any
+    severity, that the merge base does not carry. A pull request may
+    still touch a workflow that carries pre-existing findings; the
+    step summary tabulates base, head, new and fixed counts per rule
+    and file.
+  - **`absolute`** — the run fails on **any** finding the head carries,
+    pre-existing or not.
+
+  When the workflow cannot audit the merge base (no merge base, a failed
+  worktree or a failed base audit), the gate warns and **falls back
+  to absolute mode**, so an infrastructure failure never lets a
+  finding through. Runs that are not pull requests (pushes, manual
+  dispatch) have no base to compare against and always use absolute
+  mode. The comparison counts findings per rule and file rather than
+  matching lines, so moving code does not count as a new finding, but
+  a second finding of a rule already present in the same file does;
+  renaming a file makes its findings new, because they then carry a
+  new path.
+  An org-level **code-scanning ruleset** can also promote selected
+  findings to merge-blocking (see *Promoting findings to
+  merge-blocking* below).
 
 #### One-time org-admin setup
 
@@ -289,12 +315,11 @@ an organisation ruleset:
    - **Repository**: `lfreleng-actions/.github`
    - **Workflow file path**: `.github/workflows/zizmor.yaml`
    - **Ref**: `main`
-5. For the initial advisory rollout, leave **Do not require
+5. For an advisory rollout, leave **Do not require
    workflows to pass before merging** *checked* so the workflow runs
-   without blocking merges (advisory mode is also reinforced by the
-   SARIF output, which causes zizmor to exit 0). Later, after the
-   team clears the backlog, uncheck this option to make the workflow
-   required before merging.
+   without blocking merges. Uncheck this option to make the workflow
+   required before merging; in the default `ratchet` mode it then
+   blocks a pull request that adds a finding and passes one that does not.
 6. Click **Create**.
 
 [org-rulesets]: https://github.com/organizations/lfreleng-actions/settings/rules
@@ -342,8 +367,9 @@ merge-blocking:
    threshold to `error` (or the desired severity), and target the
    default branch.
 
-Until an org admin completes that step, `zizmor` operates purely as a
-reporting tool.
+Until an org admin completes that step, code scanning reports `zizmor`
+alerts without blocking on them; the workflow's own gate (above) still
+blocks a pull request that adds a finding.
 
 ### Organisation-wide zizmor SARIF publisher
 
@@ -439,10 +465,15 @@ files 0–100 and reports each finding with severity and location.
 
 - **Scope**: the files **changed on the pull request**, and nothing
   else (via
-  `aislop ci --changes --base <PR base branch>`), so the check reports
-  on what the PR introduces rather than pre-existing repository state.
+  `aislop ci --changes --base <merge base>` in ratchet mode, and
+  `--base <PR base branch>` otherwise), so the check reports on what
+  the PR introduces rather than pre-existing repository state.
+  `--base` is a two-dot diff, so diffing against the merge base keeps
+  files that differ from it solely through an advanced base branch out
+  of the head scan; the merge-base scan does not cover them either.
   Whole-repository scanning belongs to the scheduled
-  `aislop-sarif-publish.yaml` workflow.
+  `aislop-sarif-publish.yaml` workflow. The gate judges coverage notices
+  on the head scan alone.
 - **Implementation**: the scan itself runs through
   [`aislop-scan-action`](https://github.com/lfreleng-actions/aislop-scan-action)
   (pinned by commit SHA), which installs the aislop CLI from its
@@ -452,25 +483,73 @@ files 0–100 and reports each finding with severity and location.
   severity/rule breakdowns and the top findings, plus inline PR
   annotations for the top findings. No SARIF upload happens on pull
   requests.
-- **Gating**: the scan step always succeeds; a separate gate step
-  decides enforcement based on the organisation variable
+- **Gating**: the scan step always succeeds; separate steps decide
+  enforcement. On a pull request the workflow also scans the **merge
+  base** with the same pinned action, over the same files: the files
+  the pull request modifies, as they were before it (files the pull
+  request adds have no base version). The scan runs in a detached
+  worktree of the merge base, left as the base had it, with
+  `aislop ci --changes --base <head commit>`. That scope also holds
+  the paths the pull request deletes, so the workflow drops the base
+  findings on those paths from the base SARIF before comparing.
+  `aislop ci` ignores `--include` and `--exclude`, and deleting the
+  paths from the worktree instead would also drop scanner
+  configuration and manifests (`.aislop/config.yml`, `package.json`)
+  from the base scan, counting findings the head newly enables as
+  pre-existing. The
+  [`findings-ratchet`](actions/findings-ratchet) action then compares
+  the two SARIF reports. The **`AISLOP_GATE_MODE`** organisation or
+  repository variable selects the comparison:
+  - **`ratchet`** (the default when the variable is unset) — the run
+    fails when the pull request **adds** findings. A pull request
+    may carry pre-existing findings in the files it touches, and may
+    remove some, but may not add any. The comparison counts findings
+    per rule and file, so moving code does not count as a new
+    finding; renaming a file makes its findings new, because they then
+    carry a new path.
+  - **`absolute`** — the gate behaves as it did before the ratchet
+    existed: it fails on every counted finding in the changed files,
+    judged from aislop's JSON report, and skips the base scan and the
+    comparison.
+
+  When the workflow cannot scan the merge base (no merge base, a failed
+  worktree or scan, no SARIF or an unusable one, or a base scan with
+  reduced coverage, below), the gate warns and **falls back to
+  absolute mode**: it fails on any counted finding in the head SARIF,
+  and then applies the `absolute` gate to the JSON report as well, so
+  an infrastructure failure never lets a finding through.
+  `workflow_dispatch` runs have no base and always use absolute mode.
+
+  Which findings count comes from the organisation variable
   **`AISLOP_GATE_LEVEL`**:
-  - **`any`** (the default when the variable is unset) — the run
-    **fails** when the changed files carry **any finding, at any
-    severity**: high, medium and low all block. Because the scan
-    scope is the pull request's changed files, passing this gate
-    means the pull request adds no findings.
-  - **`high`** — the run fails on **high-severity** findings alone (an
-    aislop error-severity diagnostic). Medium and low stay advisory.
+  - **`any`** (the default when the variable is unset) — every
+    finding counts, **at any severity**: high, medium and low all
+    block.
+  - **`high`** — **high-severity** findings alone count (an aislop
+    error-severity diagnostic). Medium and low stay advisory.
     This was the previous default; use it as a per-repository escape
     hatch while clearing an existing backlog.
-  - **`all`** — the run fails on the full aislop quality gate (score
-    below the configured threshold **or** any high-severity finding).
-  - **`off`** — advisory: the workflow reports without blocking.
+  - **`all`** — high-severity findings count, and the run also fails
+    on the score. In `ratchet` mode it fails when the head score is
+    below the merge-base score; both come from aislop over the same
+    files, so each already reflects the repository's own
+    configuration. aislop's score depends on the number of files it
+    scans, so when the pull request deletes a path the two scores are
+    not comparable: the gate skips the score check with a notice and
+    still enforces findings. It does the same when the merge base has
+    no score, which aislop withholds when unsupported files dominate
+    a repository while still reporting findings. In `absolute` mode,
+    or when the ratchet falls back to it, the run fails when aislop's
+    own exit status does, as before the ratchet existed. The workflow
+    never computes a threshold itself: aislop resolves `extends` and
+    its defaults before applying `ci.failBelow`, and its report does
+    not expose the result.
+  - **`off`** — advisory: the workflow reports without blocking, and
+    runs no base scan.
 
-  A **repository** variable of the same name overrides the
-  organisation value, so a repository carrying a backlog can sit at
-  `high` without weakening the estate-wide default.
+  **Repository** variables of the same names override the
+  organisation values, so a repository carrying a backlog can sit at
+  `high` or `absolute` without weakening the estate-wide default.
 
   For backward compatibility, when `AISLOP_GATE_LEVEL` is unset the
   legacy **`AISLOP_ENFORCE`** `= true` variable still selects the
@@ -493,7 +572,14 @@ files 0–100 and reports each finding with severity and location.
   repository variable to `true` to make reduced coverage block at the
   enforcing gate levels. A missing engine binary (`engines-ready` =
   `false` from the action) counts as reduced coverage in the same
-  way.
+  way. `aislop-scan-action` writes the JSON report and the SARIF from
+  two separate aislop runs, so in `ratchet` mode a scan also counts as
+  reduced coverage when its SARIF carries a coverage notice, or when
+  its JSON report and SARIF disagree on the number of other findings.
+  On the head that warns, or blocks under `AISLOP_STRICT_COVERAGE`;
+  on the merge base the gate discards the base scan and falls back to
+  absolute mode, so a finding missing from the base can never excuse
+  one on the head.
 - **Version pin**: the aislop CLI version pin lives in
   `aislop-scan-action` (its bundled `package.json` / `package-lock.json`);
   bump it there via a PR and release, then update the action pin here.
@@ -518,14 +604,15 @@ ruleset, mirroring the zizmor audit:
    - **Repository**: `lfreleng-actions/.github`
    - **Workflow file path**: `.github/workflows/aislop.yaml`
    - **Ref**: `main`
-5. The `any` gate level is the default, so the check blocks a merge
-   whenever a pull request's changed files carry a finding of any
-   severity once you enable **Require workflows to pass before
-   merging**. To report without blocking first, either leave **Do not
-   require workflows to pass before merging** *checked* or set the
-   `AISLOP_GATE_LEVEL` organisation variable to `off`; `high`
-   restores the earlier behaviour, which blocked on high severity
-   alone, and `all` enforces the score threshold as well.
+5. The `any` gate level and `ratchet` mode are the defaults, so the
+   check blocks a merge whenever a pull request adds a finding of any
+   severity to its changed files once you enable **Require workflows
+   to pass before merging**. To report without blocking first, either
+   leave **Do not require workflows to pass before merging**
+   *checked* or set the `AISLOP_GATE_LEVEL` organisation variable to
+   `off`; `high` counts high severity alone, `all` also blocks a
+   score drop, and `AISLOP_GATE_MODE` = `absolute` blocks on every
+   finding in the changed files, pre-existing or not.
 6. Click **Create**.
 
 After saving, every pull request opened in the organisation will
