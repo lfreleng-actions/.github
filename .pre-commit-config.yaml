@@ -63,10 +63,12 @@ repos:
     rev: 25bcf95026b96e2dd3c0aec3090c3d6ef6ca2e6c  # frozen: v0.17.3
     hooks:
       - id: ruff
-        files: ^(\.github/scripts|scripts|tests|custom_components)/.+\.py$
+        # yamllint disable-line rule:line-length
+        files: ^(\.github/scripts|scripts|tests|custom_components|actions)/.+\.py$
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
-        files: ^(\.github/scripts|scripts|tests|custom_components)/.+\.py$
+        # yamllint disable-line rule:line-length
+        files: ^(\.github/scripts|scripts|tests|custom_components|actions)/.+\.py$
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: ad26ebfa797fcb9b8f83275937c1c1d6e126719c  # frozen: v2.4.1
@@ -126,9 +128,10 @@ repos:
         # `uv sync` provides it through .venv (see pyproject.toml), but
         # pre-commit.ci has no .venv, and adding pytest to this hook's
         # environment breaches its 250 MiB tier cap (nodejs_wheel alone
-        # is ~200 MiB). The suite is type-checked instead by the
-        # basedpyright step in .github/workflows/agent-scripts.yaml.
-        exclude: "^scripts/agents/tests/"
+        # is ~200 MiB). The suites are type-checked instead by the
+        # basedpyright steps in .github/workflows/agent-scripts.yaml
+        # and .github/workflows/findings-ratchet.yaml.
+        exclude: "^(scripts/agents|actions/findings-ratchet)/tests/"
 
   - repo: https://github.com/lfreleng-actions/gha-workflow-linter
     rev: 00aec232d3fd85436fff24dfeaad23921c5db1cb  # frozen: v1.10.1
