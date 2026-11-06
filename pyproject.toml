@@ -16,7 +16,7 @@ version = "0"
 requires-python = ">=3.11"
 
 [dependency-groups]
-dev = ["basedpyright==1.40.2", "pytest==9.1.1"]
+dev = ["basedpyright==1.40.2", "pytest==9.2.0"]
 # The linter allow-list-bump.yaml runs, pinned here so uv.lock fixes its
 # whole dependency tree by hash and Dependabot can propose the bump.
 # `uv sync` installs only the default dev group, so the agent-script
