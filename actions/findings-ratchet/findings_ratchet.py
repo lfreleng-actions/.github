@@ -249,15 +249,16 @@ def location_text(finding: Finding) -> str:
     return f"{finding.path}:{finding.line}"
 
 
-def annotation(finding: Finding) -> str:
-    """Build the ::error workflow command for one new finding."""
+def annotation(finding: Finding, *, absolute: bool) -> str:
+    """Build the ::error command for one finding, new unless absolute."""
     properties: list[str] = []
     if finding.path:
         properties.append(f"file={text_property(finding.path)}")
         if finding.line is not None:
             properties.append(f"line={finding.line}")
     properties.append(f"title={text_property(f'{TITLE}: {finding.rule}')}")
-    text = f"New finding {finding.rule}: {finding.message}"
+    label = "Finding" if absolute else "New finding"
+    text = f"{label} {finding.rule}: {finding.message}"
     return f"::error {','.join(properties)}::{wf_escape(text)}"
 
 
@@ -267,24 +268,34 @@ def counts_text(outputs: dict[str, str]) -> str:
     return ", ".join(f"{name} {outputs[f'{name}-count']}" for name in names)
 
 
-def summary_markdown(rows: Sequence[KeyRow], outputs: dict[str, str]) -> str:
-    """Render the step summary."""
+def summary_markdown(
+    rows: Sequence[KeyRow], outputs: dict[str, str], reason: str | None
+) -> str:
+    """Render the step summary; absolute mode has no base to compare."""
+    absolute = outputs["effective-mode"] == "absolute"
     verdict = f"Verdict: **{outputs['verdict']}** (mode: {outputs['effective-mode']})"
-    lines = ["## Findings ratchet", "", verdict, "", counts_text(outputs), ""]
+    lines = ["## Findings ratchet", "", verdict, ""]
+    if absolute:
+        note = f" ({md_cell(reason)})" if reason else ""
+        lines += [f"Absolute mode: no base comparison{note}.", ""]
+        lines += [f"head {outputs['head-count']}", ""]
+        empty = "No counted findings in the head."
+        header = ["Rule", "Path", "Subject", "Head", "Findings"]
+    else:
+        lines += [counts_text(outputs), ""]
+        empty = "No counted findings on either side."
+        header = ["Rule", "Path", "Subject", "Base", "Head", "New", "Fixed"]
+        header.append("New findings")
     if not rows:
-        return "\n".join([*lines, "No counted findings on either side.", ""])
-    lines += [
-        "| Rule | Path | Subject | Base | Head | New | Fixed | New findings |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
-    ]
+        return "\n".join([*lines, empty, ""])
+    lines += [f"| {' | '.join(header)} |", f"| {' | '.join(['---'] * len(header))} |"]
     for row in rows:
-        rule, path, subject = row.key
+        counts = [row.head] if absolute else [row.base, row.head, row.new, row.fixed]
         detail = "<br>".join(
             f"{md_cell(location_text(finding))}: {md_cell(finding.message)}"
             for finding in row.new_findings
         )
-        cells = [md_cell(rule), md_cell(path), md_cell(subject)]
-        cells += [str(row.base), str(row.head), str(row.new), str(row.fixed), detail]
+        cells = [*(md_cell(part) for part in row.key), *map(str, counts), detail]
         lines.append(f"| {' | '.join(cells)} |")
     return "\n".join(lines) + "\n"
 
@@ -333,15 +344,27 @@ def fail_unusable_head(mode: str, error: SarifError) -> int:
     return EXIT_FAIL
 
 
-def print_report(mode: str, rows: Sequence[KeyRow], outputs: dict[str, str]) -> None:
+def print_report(
+    mode: str, rows: Sequence[KeyRow], outputs: dict[str, str], reason: str | None
+) -> None:
     """Print the result line and, with commands suspended, the key table."""
-    print(f"findings-ratchet ({mode}): {counts_text(outputs)}: {outputs['verdict']}")
-    report = [
-        f"base {row.base} head {row.head} new {row.new} fixed {row.fixed}: {' | '.join(row.key)}"
-        for row in rows
-    ]
+    verdict = outputs["verdict"]
+    if mode == "absolute":
+        line = f"findings-ratchet ({mode}): head {outputs['head-count']}: {verdict}"
+        if reason:
+            line += f" ({' '.join(reason.split())})"
+        print(line)
+        report = [f"head {row.head}: {' | '.join(row.key)}" for row in rows]
+        prefix = "finding"
+    else:
+        print(f"findings-ratchet ({mode}): {counts_text(outputs)}: {verdict}")
+        report = [
+            f"base {row.base} head {row.head} new {row.new} fixed {row.fixed}: {' | '.join(row.key)}"
+            for row in rows
+        ]
+        prefix = "new"
     report += [
-        f"new: {location_text(finding)}: {' '.join(finding.message.split())}"
+        f"{prefix}: {location_text(finding)}: {' '.join(finding.message.split())}"
         for row in rows
         for finding in row.new_findings
     ]
@@ -368,6 +391,7 @@ def main(argv: Sequence[str]) -> int:
         return fail_unusable_head(mode, exc)
 
     base: list[Finding] = []
+    reason: str | None = None
     if mode == "ratchet":
         try:
             base = read_findings(
@@ -375,22 +399,27 @@ def main(argv: Sequence[str]) -> int:
             )
         except SarifError as exc:
             mode = "absolute"
+            reason = f"base SARIF unusable: {exc}"
             text = f"Base SARIF unusable ({exc}); using absolute mode"
             print(f"::warning title={TITLE}::{wf_escape(text)}")
 
+    absolute = mode == "absolute"
     rows = compare(head, base)
     new_total = sum(row.new for row in rows)
-    failed = new_total > 0 if mode == "ratchet" else bool(head)
+    failed = bool(head) if absolute else new_total > 0
     counts = (len(base), len(head), new_total, sum(row.fixed for row in rows))
     outputs = {"verdict": "fail" if failed else "pass", "effective-mode": mode}
     outputs |= {name: str(count) for name, count in zip(COUNTS, counts, strict=True)}
+    if absolute:
+        # Base, new and fixed counts mean nothing without a base.
+        outputs |= dict.fromkeys(("base-count", "new-count", "fixed-count"), "")
     write_outputs(outputs)
-    append_file("GITHUB_STEP_SUMMARY", summary_markdown(rows, outputs))
-    print_report(mode, rows, outputs)
+    append_file("GITHUB_STEP_SUMMARY", summary_markdown(rows, outputs, reason))
+    print_report(mode, rows, outputs, reason)
     if cast("str", args.annotate) == "true":
         for row in rows:
             for finding in row.new_findings:
-                print(annotation(finding))
+                print(annotation(finding, absolute=absolute))
     return EXIT_FAIL if failed else EXIT_PASS
 
 

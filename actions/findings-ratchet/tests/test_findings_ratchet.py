@@ -329,7 +329,8 @@ def test_aislop_dependency_without_text_base_falls_back(
     out = run(head, dependency_without_text(message), tool="aislop")
     assert out.code == EXIT_FAIL
     assert out.outputs["effective-mode"] == "absolute"
-    assert out.outputs["new-count"] == "1"
+    assert out.outputs["head-count"] == "1"
+    assert out.outputs["new-count"] == ""
     assert len(out.commands("warning")) == 1
 
 
@@ -503,7 +504,8 @@ def test_missing_base_falls_back_to_absolute_and_fails(
     out = run(sarif([result("rule-a", "a.py")]), None)
     assert out.code == EXIT_FAIL
     assert out.outputs["effective-mode"] == "absolute"
-    assert out.outputs["new-count"] == "1"
+    assert out.outputs["head-count"] == "1"
+    assert out.outputs["new-count"] == ""
     assert len(out.commands("warning")) == 1
     assert "absolute mode" in out.commands("warning")[0]
 
@@ -761,3 +763,133 @@ def test_bad_tool_is_a_usage_error(run: Callable[..., Outcome]) -> None:
     out = run(sarif([]), sarif([]), tool="semgrep")
     assert out.code == EXIT_USAGE
     assert "invalid choice: 'semgrep'" in out.stderr
+
+
+ABSOLUTE_COUNTS = {"base-count": "", "new-count": "", "fixed-count": ""}
+
+
+def error_texts(out: Outcome) -> list[str]:
+    """Return the data portion of each printed ::error command."""
+    return [line.split("::", 2)[2] for line in out.commands("error")]
+
+
+def test_configured_absolute_reports_findings(run: Callable[..., Outcome]) -> None:
+    """Configured absolute mode calls head findings findings, with no counts."""
+    head = sarif(
+        [
+            result("rule-a", "a.py", line=2, message="one"),
+            result("rule-b", "b.py", line=5, message="two"),
+        ]
+    )
+    out = run(head, None, extra=["--mode=absolute"])
+    assert out.code == EXIT_FAIL
+    assert out.outputs == {
+        "verdict": "fail",
+        "effective-mode": "absolute",
+        "head-count": "2",
+        **ABSOLUTE_COUNTS,
+    }
+    assert sorted(error_texts(out)) == ["Finding rule-a: one", "Finding rule-b: two"]
+    assert out.commands("warning") == []
+    assert "findings-ratchet (absolute): head 2: fail\n" in out.stdout
+    assert "New finding" not in out.stdout
+    assert "Absolute mode: no base comparison." in out.summary
+    assert "| Rule | Path | Subject | Head | Findings |" in out.summary
+    assert "new" not in out.summary.lower()
+    assert "base 0" not in out.summary
+
+
+def test_fallback_reports_findings_and_reason(run: Callable[..., Outcome]) -> None:
+    """A fallback to absolute mode warns once and says why in the reports."""
+    out = run(sarif([result("rule-a", "a.py", message="one")]), "{not json")
+    assert out.code == EXIT_FAIL
+    assert out.outputs == {
+        "verdict": "fail",
+        "effective-mode": "absolute",
+        "head-count": "1",
+        **ABSOLUTE_COUNTS,
+    }
+    warnings = out.commands("warning")
+    assert len(warnings) == 1
+    assert "using absolute mode" in warnings[0]
+    assert error_texts(out) == ["Finding rule-a: one"]
+    result_line = next(
+        line
+        for line in out.stdout.splitlines()
+        if line.startswith("findings-ratchet (absolute):")
+    )
+    assert result_line.startswith("findings-ratchet (absolute): head 1: fail (")
+    assert "base SARIF unusable" in result_line
+    assert "Absolute mode: no base comparison (base SARIF unusable" in out.summary
+    assert "| Rule | Path | Subject | Head | Findings |" in out.summary
+
+
+def test_absolute_mode_clean_head_passes(run: Callable[..., Outcome]) -> None:
+    """Absolute mode with no head findings passes with empty counts."""
+    out = run(sarif([]), None, extra=["--mode=absolute"])
+    assert out.code == EXIT_PASS
+    assert out.outputs == {
+        "verdict": "pass",
+        "effective-mode": "absolute",
+        "head-count": "0",
+        **ABSOLUTE_COUNTS,
+    }
+    assert out.commands("error") == []
+    assert "findings-ratchet (absolute): head 0: pass\n" in out.stdout
+
+
+RATCHET_STDOUT = """\
+findings-ratchet (ratchet): base 2, head 2, new 1, fixed 1: fail
+::stop-commands::TOKEN
+base 1 head 2 new 1 fixed 0: rule-a | a.py | \n\
+base 1 head 0 new 0 fixed 1: rule-b | b.py | \n\
+new: a.py:9: fresh one
+::TOKEN::
+::error file=a.py,line=9,title=findings-ratchet%3A rule-a::New finding rule-a: fresh one
+"""
+
+RATCHET_SUMMARY = """\
+## Findings ratchet
+
+Verdict: **fail** (mode: ratchet)
+
+base 2, head 2, new 1, fixed 1
+
+| Rule | Path | Subject | Base | Head | New | Fixed | New findings |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| rule-a | a.py |  | 1 | 2 | 1 | 0 | a.py:9: fresh one |
+| rule-b | b.py |  | 1 | 0 | 0 | 1 |  |
+"""
+
+
+def test_ratchet_report_is_pinned(run: Callable[..., Outcome]) -> None:
+    """Ratchet mode with a usable base reports exactly as it always has."""
+    base = sarif(
+        [
+            result("rule-a", "a.py", line=1, message="old"),
+            result("rule-b", "b.py", line=4, message="gone"),
+        ]
+    )
+    head = sarif(
+        [
+            result("rule-a", "a.py", line=1, message="old"),
+            result("rule-a", "a.py", line=9, message="fresh one"),
+        ]
+    )
+    out = run(head, base)
+    assert out.code == EXIT_FAIL
+    assert out.outputs == {
+        "verdict": "fail",
+        "effective-mode": "ratchet",
+        "base-count": "2",
+        "head-count": "2",
+        "new-count": "1",
+        "fixed-count": "1",
+    }
+    token = next(
+        line.removeprefix("::stop-commands::")
+        for line in out.stdout.splitlines()
+        if line.startswith("::stop-commands::")
+    )
+    assert out.stdout.replace(token, "TOKEN") == RATCHET_STDOUT
+    assert out.summary == RATCHET_SUMMARY
