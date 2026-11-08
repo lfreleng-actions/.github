@@ -46,7 +46,7 @@ need nothing beyond the standard library.
 | `mode`          | No       | `ratchet`                 | `ratchet` or `absolute`                                                                                                       |
 | `levels`        | No       | `error,warning,note,none` | SARIF levels that count                                                                                                       |
 | `exclude-rules` | No       | `''`                      | Comma-separated rule IDs never counted, on either side                                                                        |
-| `annotate`      | No       | `true`                    | Emit one `::error file=…,line=…` annotation per new finding                                                                   |
+| `annotate`      | No       | `true`                    | Emit one `::error file=…,line=…` annotation per new finding, or per head finding in absolute mode                             |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -62,19 +62,22 @@ and `cppcheck/chunks-skipped` are the expected entries.
 
 <!-- markdownlint-disable MD013 -->
 
-| Output           | Description                                                    |
-| ---------------- | -------------------------------------------------------------- |
-| `verdict`        | `pass` or `fail`                                               |
-| `effective-mode` | The mode applied: `ratchet`, or `absolute` after a fallback    |
-| `base-count`     | Counted findings in the base SARIF (`0` in absolute mode)      |
-| `head-count`     | Counted findings in the head SARIF                             |
-| `new-count`      | Findings the head adds; every head finding in absolute mode    |
-| `fixed-count`    | Findings the head removes (`0` in absolute mode)               |
+| Output           | Description                                                 |
+| ---------------- | ----------------------------------------------------------- |
+| `verdict`        | `pass` or `fail`                                            |
+| `effective-mode` | The mode applied: `ratchet`, or `absolute` after a fallback |
+| `base-count`     | Counted findings in the base SARIF (empty in absolute mode) |
+| `head-count`     | Counted findings in the head SARIF                          |
+| `new-count`      | Findings the head adds (empty in absolute mode)             |
+| `fixed-count`    | Findings the head removes (empty in absolute mode)          |
 
 <!-- markdownlint-enable MD013 -->
 
-When the head SARIF is missing or invalid, `verdict` is `fail` and the
-four counts are empty.
+Absolute mode has no base to compare with, so `base-count`,
+`new-count` and `fixed-count` are empty there, whether the caller set
+the mode or the action fell back to it; `head-count` holds the
+findings it judges. When the head SARIF is missing or invalid,
+`verdict` is `fail` and the four counts are empty.
 
 ## Matching
 
@@ -173,13 +176,24 @@ means emitting this subset, not adding resolvers here.
 
 ## Reporting
 
-The step summary holds one table of keys with base, head, new and
-fixed counts, new findings first, each new finding with its head
-location and message. The job log prints the same table between
+In ratchet mode, the step summary holds one table of keys with base,
+head, new and fixed counts, new findings first, each new finding with
+its head location and message. Annotations cover new findings alone,
+as `New finding <rule>: <message>`.
+
+Absolute mode compares nothing, so it reports no finding as new. The
+step summary says `Absolute mode: no base comparison`, with the reason
+after a fallback, and its table has the columns `Rule`, `Path`,
+`Subject`, `Head` and `Findings`, listing every head finding. The log's
+result line gives the head count alone, plus any fallback reason, and
+annotations read `Finding <rule>: <message>`. A fallback states its
+reason once, in its `::warning::`, not on each annotation.
+
+The job log prints the same table as the step summary between
 `::stop-commands::` markers, so tool text there cannot run a workflow
-command. Annotations cover new findings alone, and escape `%`, `\r` and
-`\n` in their data as `aislop.yaml`'s `wf_escape` does, plus `:` and
-`,` in their properties.
+command. Annotations escape `%`, `\r` and `\n` in their data as
+`aislop.yaml`'s `wf_escape` does, plus `:` and `,` in their
+properties.
 
 Exit codes: `0` pass, `1` fail, `2` usage error (an unknown `tool`,
 `mode`, `annotate` value or level).

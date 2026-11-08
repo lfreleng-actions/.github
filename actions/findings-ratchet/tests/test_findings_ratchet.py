@@ -329,7 +329,8 @@ def test_aislop_dependency_without_text_base_falls_back(
     out = run(head, dependency_without_text(message), tool="aislop")
     assert out.code == EXIT_FAIL
     assert out.outputs["effective-mode"] == "absolute"
-    assert out.outputs["new-count"] == "1"
+    assert out.outputs["head-count"] == "1"
+    assert out.outputs["new-count"] == ""
     assert len(out.commands("warning")) == 1
 
 
@@ -503,7 +504,8 @@ def test_missing_base_falls_back_to_absolute_and_fails(
     out = run(sarif([result("rule-a", "a.py")]), None)
     assert out.code == EXIT_FAIL
     assert out.outputs["effective-mode"] == "absolute"
-    assert out.outputs["new-count"] == "1"
+    assert out.outputs["head-count"] == "1"
+    assert out.outputs["new-count"] == ""
     assert len(out.commands("warning")) == 1
     assert "absolute mode" in out.commands("warning")[0]
 
@@ -771,7 +773,6 @@ def error_texts(out: Outcome) -> list[str]:
     return [line.split("::", 2)[2] for line in out.commands("error")]
 
 
-@pytest.mark.xfail(reason="absolute mode reports head findings as new")
 def test_configured_absolute_reports_findings(run: Callable[..., Outcome]) -> None:
     """Configured absolute mode calls head findings findings, with no counts."""
     head = sarif(
@@ -798,7 +799,6 @@ def test_configured_absolute_reports_findings(run: Callable[..., Outcome]) -> No
     assert "base 0" not in out.summary
 
 
-@pytest.mark.xfail(reason="the absolute-mode fallback reports findings as new")
 def test_fallback_reports_findings_and_reason(run: Callable[..., Outcome]) -> None:
     """A fallback to absolute mode warns once and says why in the reports."""
     out = run(sarif([result("rule-a", "a.py", message="one")]), "{not json")
@@ -824,7 +824,6 @@ def test_fallback_reports_findings_and_reason(run: Callable[..., Outcome]) -> No
     assert "| Rule | Path | Subject | Head | Findings |" in out.summary
 
 
-@pytest.mark.xfail(reason="absolute mode emits base, new and fixed counts")
 def test_absolute_mode_clean_head_passes(run: Callable[..., Outcome]) -> None:
     """Absolute mode with no head findings passes with empty counts."""
     out = run(sarif([]), None, extra=["--mode=absolute"])
