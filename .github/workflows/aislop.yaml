@@ -600,6 +600,7 @@ jobs:
           DELETES: '${{ steps.base_tree.outputs.deletes }}'
           VERDICT: ${{ steps.ratchet.outputs.verdict }}
           EFFECTIVE_MODE: ${{ steps.ratchet.outputs['effective-mode'] }}
+          HEAD_COUNT: ${{ steps.ratchet.outputs['head-count'] }}
           NEW_COUNT: ${{ steps.ratchet.outputs['new-count'] }}
           FIXED_COUNT: ${{ steps.ratchet.outputs['fixed-count'] }}
         run: |
@@ -779,11 +780,17 @@ jobs:
                 exit 1
                 ;;
             esac
-            echo "findings ratchet (${EFFECTIVE_MODE}): ${VERDICT};" \
-                 "new ${NEW_COUNT}, fixed ${FIXED_COUNT}"
+            # With no base to compare, the action reports the head
+            # count alone; its new and fixed counts are empty there.
             if [ "${EFFECTIVE_MODE}" = 'ratchet' ]; then
+              echo "findings ratchet (${EFFECTIVE_MODE}): ${VERDICT};" \
+                   "new ${NEW_COUNT}, fixed ${FIXED_COUNT}"
+              count="${NEW_COUNT}"
               what='new finding(s) added by this pull request'
             else
+              echo "findings ratchet (${EFFECTIVE_MODE}): ${VERDICT};" \
+                   "head ${HEAD_COUNT}"
+              count="${HEAD_COUNT}"
               what='finding(s) on the changed files'
             fi
             counted='high-severity '
@@ -796,7 +803,7 @@ jobs:
             fi
             if [ "${VERDICT}" != 'pass' ]; then
               echo "::error::aislop quality gate failed:" \
-                   "${NEW_COUNT} ${counted}${what}" \
+                   "${count} ${counted}${what}" \
                    "(gate level '${level}', mode '${EFFECTIVE_MODE}');" \
                    "a pull request must not add findings.${hint}"
               exit 1
