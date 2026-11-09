@@ -207,7 +207,7 @@ archive.ubuntu.com:443
 archive.ubuntu.com:80
 
 # Astral (uv) site: uv installer bootstrap used by the Python actions
-# (e.g. gerrit-clone-action, python-sbom-action).
+# (e.g. source-clone-action).
 astral.sh:443
 
 # Docker Hub registry auth, used by docker buildx/build-push and helm.
@@ -313,39 +313,39 @@ ftp.mozilla.org:443
 # right: '*.pkgbuild.com' does not match a nested host.
 geo.mirror.pkgbuild.com:443
 
-# Gerrit (Automotive Linux): git clone via gerrit-clone-action
+# Gerrit (Automotive Linux): git clone via source-clone-action
 # (HTTPS); git-over-SSH clone, review voting and ssh-keyscan (SSH).
 gerrit.automotivelinux.org:29418
 gerrit.automotivelinux.org:443
 
-# Gerrit (FD.io): git clone via gerrit-clone-action (HTTPS);
+# Gerrit (FD.io): git clone via source-clone-action (HTTPS);
 # git-over-SSH clone, review voting and ssh-keyscan (SSH).
 gerrit.fd.io:29418
 gerrit.fd.io:443
 
-# Gerrit (LF Broadband): git clone via gerrit-clone-action (HTTPS);
+# Gerrit (LF Broadband): git clone via source-clone-action (HTTPS);
 # git-over-SSH clone, review voting and ssh-keyscan (SSH).
 gerrit.lfbroadband.org:29418
 gerrit.lfbroadband.org:443
 
-# Gerrit (Linux Foundation): git clone via gerrit-clone-action
+# Gerrit (Linux Foundation): git clone via source-clone-action
 # (HTTPS); git-over-SSH clone, review voting and ssh-keyscan (SSH).
 gerrit.linuxfoundation.org:29418
 gerrit.linuxfoundation.org:443
 
-# Gerrit (O-RAN-SC): git clone via gerrit-clone-action and
+# Gerrit (O-RAN-SC): git clone via source-clone-action and
 # python-test-action (HTTPS); git-over-SSH clone, review voting and
 # ssh-keyscan (SSH).
 gerrit.o-ran-sc.org:29418
 gerrit.o-ran-sc.org:443
 
-# Gerrit (ONAP): git clone via gerrit-clone-action and
+# Gerrit (ONAP): git clone via source-clone-action and
 # python-test-action (HTTPS); git-over-SSH clone, review voting and
 # ssh-keyscan (SSH).
 gerrit.onap.org:29418
 gerrit.onap.org:443
 
-# Gerrit (Anuket/OPNFV): git clone via gerrit-clone-action (HTTPS);
+# Gerrit (Anuket/OPNFV): git clone via source-clone-action (HTTPS);
 # git-over-SSH clone, review voting and ssh-keyscan (SSH).
 gerrit.opnfv.org:29418
 gerrit.opnfv.org:443
@@ -382,7 +382,7 @@ git.linuxfoundation.org:443
 # documentation builds request.
 git.onap.org:443
 
-# Gerrit (OpenDaylight): git clone via gerrit-clone-action and
+# Gerrit (OpenDaylight): git clone via source-clone-action and
 # python-test-action (HTTPS); git-over-SSH clone, review voting and
 # ssh-keyscan (SSH).
 git.opendaylight.org:29418
