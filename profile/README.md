@@ -29,6 +29,8 @@ with signed tags and provenance attestations.
 | [python-twine-check-action]   | Verify Python build artefacts with Twine before publishing       |
 | [python-notebook-test-action] | Check Jupyter Notebooks with pytest and nbmake                   |
 | [tox-run-action]              | Run tox with specified Python version and environments           |
+| [csit-build-action]           | Run CSIT Robot Framework suites on Docker or OpenStack test labs |
+| [jjb-action]                  | Test and update Jenkins jobs with Jenkins Job Builder            |
 | [gradle-build-action]         | Set up a specific JDK version and run a Gradle build             |
 | [maven-build-action]          | Set up Maven and build a Java project                            |
 | [maven-make-build-action]     | Set up Maven and run make                                        |
@@ -48,6 +50,7 @@ with signed tags and provenance attestations.
 | [cbom-action]                 | Generate CycloneDX Cryptography Bill of Materials (CBOM) reports |
 | [make-action]                 | Execute the steps described in a Makefile                        |
 | [rtd-build-action]            | Build and publish Read the Docs documentation                    |
+| [build-artifact-action]       | Safely pack and unpack build artefacts passed between jobs       |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -118,6 +121,7 @@ with signed tags and provenance attestations.
 | [tag-push-verify-action]                | Verify a workflow trigger was a tag push of a given type              |
 | [python-project-tag-push-verify-action] | Check a pushed tag matches the declared Python project version        |
 | [version-extract-action]                | Extract version strings from supported software project types         |
+| [supported-versions-action]             | Resolve the supported release lines of languages and build tools      |
 | [semantic-tag-increment]                | Generate an incremented tag from a tag and increment level            |
 
 <!-- markdownlint-enable MD013 -->
@@ -129,11 +133,12 @@ with signed tags and provenance attestations.
 | Action                          | Description                                                              |
 | ------------------------------- | ------------------------------------------------------------------------ |
 | [github2gerrit-action]          | Create Gerrit changes from GitHub pull requests                          |
-| [gerrit-clone-action]           | Bulk clone repositories from Gerrit with multi-threading and retry logic |
+| [source-clone-action]           | Bulk clone repositories from Gerrit servers and GitHub organisations     |
 | [checkout-gerrit-change-action] | Checkout a mirrored Gerrit change                                        |
 | [gerrit-review-action]          | Set review votes on a Gerrit system                                      |
 | [gerrit-change-info]            | Retrieve Gerrit change request information                               |
-| [gerrit-action]                 | Start Gerrit server containers with pull-replication for CI testing      |
+| [gerrit-change-visible-action]  | Check whether a Gerrit change is visible to the voting account           |
+| [gerrit-docker-k8s]             | Gerrit Docker container and Helm Charts for project deployments          |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -143,7 +148,6 @@ with signed tags and provenance attestations.
 
 | Action                           | Description                                                             |
 | -------------------------------- | ----------------------------------------------------------------------- |
-| [1password-secrets-action]       | Securely retrieve secrets from 1Password vaults                         |
 | [credential-load-action]         | Retrieve project/repository specific credentials from a 1Password vault |
 | [grype-scan-action]              | Scan SBOMs, images, or directories for vulnerabilities with Grype       |
 | [harden-runner-block-action]     | Load an egress allow-list for step-security/harden-runner block mode    |
@@ -213,6 +217,7 @@ with signed tags and provenance attestations.
 | [project-reporting-artifacts]   | Generated reports and data artefacts from the Project Reporting Tool       |
 | [github-network-audit]          | Build harden-runner egress allowlists from StepSecurity endpoint data      |
 | [github-security-report-action] | Security and quality reporting across GitHub organisations                 |
+| [github-statistics-action]      | Extract raw data and generate graphs from GitHub data                      |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -422,6 +427,8 @@ to all repositories unless otherwise stated.
 [python-twine-check-action]: https://github.com/lfreleng-actions/python-twine-check-action
 [python-notebook-test-action]: https://github.com/lfreleng-actions/python-notebook-test-action
 [tox-run-action]: https://github.com/lfreleng-actions/tox-run-action
+[csit-build-action]: https://github.com/lfreleng-actions/csit-build-action
+[jjb-action]: https://github.com/lfreleng-actions/jjb-action
 [gradle-build-action]: https://github.com/lfreleng-actions/gradle-build-action
 [maven-build-action]: https://github.com/lfreleng-actions/maven-build-action
 [maven-make-build-action]: https://github.com/lfreleng-actions/maven-make-build-action
@@ -441,6 +448,7 @@ to all repositories unless otherwise stated.
 [cbom-action]: https://github.com/lfreleng-actions/cbom-action
 [make-action]: https://github.com/lfreleng-actions/make-action
 [rtd-build-action]: https://github.com/lfreleng-actions/rtd-build-action
+[build-artifact-action]: https://github.com/lfreleng-actions/build-artifact-action
 
 <!-- Publishing & Release Actions -->
 [pypi-publish-action]: https://github.com/lfreleng-actions/pypi-publish-action
@@ -483,18 +491,19 @@ to all repositories unless otherwise stated.
 [tag-push-verify-action]: https://github.com/lfreleng-actions/tag-push-verify-action
 [python-project-tag-push-verify-action]: https://github.com/lfreleng-actions/python-project-tag-push-verify-action
 [version-extract-action]: https://github.com/lfreleng-actions/version-extract-action
+[supported-versions-action]: https://github.com/lfreleng-actions/supported-versions-action
 [semantic-tag-increment]: https://github.com/lfreleng-actions/semantic-tag-increment
 
 <!-- Gerrit Integration Actions -->
 [github2gerrit-action]: https://github.com/lfreleng-actions/github2gerrit-action
-[gerrit-clone-action]: https://github.com/lfreleng-actions/gerrit-clone-action
+[source-clone-action]: https://github.com/lfreleng-actions/source-clone-action
 [checkout-gerrit-change-action]: https://github.com/lfreleng-actions/checkout-gerrit-change-action
 [gerrit-review-action]: https://github.com/lfreleng-actions/gerrit-review-action
 [gerrit-change-info]: https://github.com/lfreleng-actions/gerrit-change-info
-[gerrit-action]: https://github.com/lfreleng-actions/gerrit-action
+[gerrit-change-visible-action]: https://github.com/lfreleng-actions/gerrit-change-visible-action
+[gerrit-docker-k8s]: https://github.com/lfreleng-actions/gerrit-docker-k8s
 
 <!-- Security & Credentials Actions -->
-[1password-secrets-action]: https://github.com/lfreleng-actions/1password-secrets-action
 [credential-load-action]: https://github.com/lfreleng-actions/credential-load-action
 [grype-scan-action]: https://github.com/lfreleng-actions/grype-scan-action
 [harden-runner-block-action]: https://github.com/lfreleng-actions/harden-runner-block-action
@@ -543,6 +552,7 @@ to all repositories unless otherwise stated.
 [project-reporting-artifacts]: https://github.com/lfreleng-actions/project-reporting-artifacts
 [github-network-audit]: https://github.com/lfreleng-actions/github-network-audit
 [github-security-report-action]: https://github.com/lfreleng-actions/github-security-report-action
+[github-statistics-action]: https://github.com/lfreleng-actions/github-statistics-action
 
 <!-- Workflow Repositories -->
 [python-workflows]: https://github.com/lfreleng-actions/python-workflows
