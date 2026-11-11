@@ -189,6 +189,19 @@ api.deps.dev:443
 # across org CI.
 api.github.com:443
 
+# NuGet package API: deliberately NOT allowed, so the entry below
+# stays commented out. aislop's engine installer (aislop-tools,
+# shipped from aislop 0.14.0) downloads optional Roslyn analyzer
+# packages from it for the C# lint engine, with no switch to skip
+# the step. No repository in this organisation has C#, so the
+# download gives no coverage. aislop-scan-action tolerates the
+# block: it verifies the Python and Go engines (ruff,
+# golangci-lint) by outcome, not by the installer's exit code. The
+# one 'Blocked' api.nuget.org:443 line in an aislop job's
+# harden-runner summary is therefore expected. Enable the entry
+# when a C# project enters the estate.
+# api.nuget.org:443
+
 # OSV vulnerability DB, queried by the OpenSSF Scorecard
 # 'Vulnerabilities' check (ossf/scorecard-action).
 api.osv.dev:443
