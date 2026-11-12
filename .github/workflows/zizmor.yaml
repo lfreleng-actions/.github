@@ -86,14 +86,14 @@ jobs:
       # lfreleng-actions/.github and publish it as
       # $CONNECTION_ALLOW_LIST for the harden-runner step below.
       # yamllint disable-line rule:line-length
-      - uses: lfreleng-actions/harden-runner-block-action@2fed66c9c36c4687c31ca349b925b81ec629673f  # v0.15.0
+      - uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
         with:
-          config: '@6d4a65c5601afd6c2fbe52bda4b0024b132f265d'  # v0.19.0
+          config: '@6e6cab073a93c0d58e4e8846d44e1cbddbac975b'  # v0.21.0
 
       # Harden the runner with the just-loaded allow-list.
       - name: 'Harden runner (block)'
         # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a  # v2.22.4
         with:
           egress-policy: 'block'
           allowed-endpoints: >
@@ -138,7 +138,7 @@ jobs:
       - name: 'Run zizmor audit'
         id: 'audit'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/zizmor-scan-action@039fa5fca189bf3515a9996b9118406d8b1e9198  # v0.6.0
+        uses: lfreleng-actions/zizmor-scan-action@f3b82e7c4603753c708678359ba91626a17aa421  # v0.6.3
         with:
           # Maximum coverage: the auditor persona surfaces the widest set
           # of audits, and an informational floor reports every finding
@@ -220,7 +220,7 @@ jobs:
         if: ${{ steps.base_tree.outputs.ready == 'true' }}
         continue-on-error: true
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/zizmor-scan-action@039fa5fca189bf3515a9996b9118406d8b1e9198  # v0.6.0
+        uses: lfreleng-actions/zizmor-scan-action@f3b82e7c4603753c708678359ba91626a17aa421  # v0.6.3
         with:
           persona: 'auditor'
           min-severity: 'informational'
@@ -236,7 +236,7 @@ jobs:
       # adds (ratchet) or holds (absolute).
       - name: 'Compare findings with merge base'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/.github/actions/findings-ratchet@e5213ff48fbefb6e3378dc410efe40ea04899205  # v0.20.0
+        uses: lfreleng-actions/.github/actions/findings-ratchet@6e6cab073a93c0d58e4e8846d44e1cbddbac975b  # v0.21.0
         with:
           head-sarif: ${{ steps.head.outputs['sarif-file'] }}
           # Only a base audit that succeeded counts; anything else
