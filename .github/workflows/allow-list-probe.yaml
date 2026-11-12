@@ -80,7 +80,7 @@ jobs:
       # azure.archive.ubuntu.com (Azure) and deb.debian.org (Fastly).
       - name: 'Harden runner (block, synthetic policy)'
         # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a  # v2.22.4
         with:
           egress-policy: 'block'
           allowed-endpoints: >
@@ -165,14 +165,14 @@ jobs:
       # This change's own list: a pull request's head, else this commit.
       - name: 'Load the allow-list under test'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/harden-runner-block-action@2fed66c9c36c4687c31ca349b925b81ec629673f  # v0.15.0
+        uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
         with:
           # yamllint disable-line rule:line-length
           config: '${{ github.repository_owner }}@${{ github.event.pull_request.head.sha || github.sha }}'
 
       - name: 'Harden runner (block)'
         # yamllint disable-line rule:line-length
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43  # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a  # v2.22.4
         with:
           egress-policy: 'block'
           allowed-endpoints: >
