@@ -71,10 +71,23 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    # Resolve the interpreter here rather than take whatever python3
+    # the caller's PATH names. An explicit version stops setup-python
+    # reading .python-version from the caller's workspace, and
+    # update-environment 'false' leaves the caller's PATH untouched.
+    - name: 'Set up Python'
+      id: 'setup-python'
+      # yamllint disable-line rule:line-length
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: '3.x'
+        update-environment: 'false'
+
     - name: 'Compare findings'
       id: 'ratchet'
       shell: 'bash'
       env:
+        PYTHON: ${{ steps.setup-python.outputs.python-path }}
         INPUT_HEAD_SARIF: ${{ inputs.head-sarif }}
         INPUT_BASE_SARIF: ${{ inputs.base-sarif }}
         INPUT_HEAD_ROOT: ${{ inputs.head-root }}
@@ -88,7 +101,7 @@ runs:
         set -euo pipefail
         # The '--name=value' form keeps a value that starts with '-'
         # from being read as an option.
-        python3 "${GITHUB_ACTION_PATH}/findings_ratchet.py" \
+        "${PYTHON}" "${GITHUB_ACTION_PATH}/findings_ratchet.py" \
           "--head-sarif=${INPUT_HEAD_SARIF}" \
           "--base-sarif=${INPUT_BASE_SARIF}" \
           "--head-root=${INPUT_HEAD_ROOT}" \
