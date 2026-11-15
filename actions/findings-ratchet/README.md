@@ -28,13 +28,17 @@ so they reach this action through a pinned reference:
 ```
 
 The action runs its own `actions/setup-python` step, pinned by commit,
-which selects the newest Python 3 in the runner's tool cache, and
-starts that interpreter by the path the step reports, so the caller's
-`PATH` does not choose it. The step runs with `update-environment:
-'false'` and leaves the caller's environment alone. The script,
-`findings_ratchet.py`, needs Python 3.11 or later, as GitHub-hosted
-runners provide; it and the `sarif_log.py` module beside it that reads
-and validates the reports need nothing beyond the standard library.
+which selects the newest Python 3.11 or later in the runner's tool
+cache, so a GitHub-hosted runner needs no download, and starts that
+interpreter by the path the step reports, so the caller's `PATH` does
+not choose it. On a self-hosted runner whose cache holds no Python 3.11
+or later, setup-python downloads one, which needs egress to GitHub. The
+step runs with `update-environment: 'false'` and leaves the caller's
+environment alone. The script, `findings_ratchet.py`, needs Python 3.11
+or later; the comparison step checks the interpreter first and fails
+with an error, writing no outputs, on an older one. The script and the
+`sarif_log.py` module beside it that reads and validates the reports
+need nothing beyond the standard library.
 
 ## Inputs
 
