@@ -1,0 +1,115 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+#
+# Egress allow-list for the code monkey bot's agent job.
+#
+# The author job of lfreleng-actions/github-code-monkey-bot runs a
+# coding agent on issue text with every tool allowed. This list is
+# what that one job may reach under 'egress-policy: block'. The bot's
+# other jobs keep the organisation list
+# (../lfreleng-actions/allow_list.txt).
+#
+# The list is short on purpose. Each entry is a host an agent session
+# needs to install a target repository's toolchain, run its hooks and
+# tests, or reach the model. A host that only publishes (a package
+# upload endpoint, a container registry) or only collects analytics
+# has no place here: a session steered by hostile text can send data
+# to any host it may reach.
+#
+# Evidence: harden-runner audit records of 1070 agent sessions across
+# 146 repositories, 6 October to 15 November 2026. 988 of them (92%)
+# reached nothing outside this list, once aislop's telemetry host is
+# set aside. Each comment names the process observed reaching the host.
+#
+# Absent on purpose:
+#   - eu.i.posthog.com: aislop's telemetry, reached by 891 sessions.
+#     Run aislop with AISLOP_NO_TELEMETRY=1 instead of allowing it.
+#   - Container registries, distribution package mirrors and project
+#     servers (Docker Hub, ghcr.io, apt and dnf mirrors, Gerrit):
+#     reached by 82 sessions in 23 repositories that build images or
+#     test against live services. Give such a repository its own
+#     supplemental list; do not widen this one.
+#
+# Load it by explicit path with harden-runner-block-action:
+#
+#   - uses: lfreleng-actions/harden-runner-block-action@<sha>  # <version>
+#     with:
+#       config: 'lfreleng-actions//.github/harden-runner/bots/code_monkey.txt@<.github commit sha>'
+#
+# This file is not named 'allow_list.txt' on purpose; see
+# ../README.md for why a second file of that name breaks forks.
+#
+# Format: one host[:port] entry per line, sorted alphabetically
+# (LC_ALL=C), with a '# comment' directly above each entry.
+
+# GitHub hosted-runner control plane (hosted-compute orchestrator and
+# watchdog), reached by the runner itself after the job's steps.
+*.githubapp.com:443
+
+# Copilot model API and the CLI's telemetry. The host differs by
+# credential: api.enterprise.githubcopilot.com and
+# telemetry.enterprise.githubcopilot.com for a personal token,
+# api.githubcopilot.com for the job's own token.
+*.githubcopilot.com:443
+
+# GitHub user content: raw files and release assets fetched by setup
+# actions, prek hooks, uv and node.
+*.githubusercontent.com:443
+
+# GitHub REST API: the Copilot CLI itself, and read-only lookups by
+# a session's own tools (curl, python).
+api.github.com:443
+
+# Copilot CLI metrics endpoint.
+cafe.github.com:443
+
+# Google download server: Go toolchain archives fetched by prek for
+# 'golang' hooks.
+dl.google.com:443
+
+# GitHub documentation, fetched by the Copilot CLI.
+docs.github.com:443
+
+# zizmor documentation, fetched by the Copilot CLI.
+docs.zizmor.sh:443
+
+# Python package files (PyPI CDN): uv and pip installs for hooks,
+# tests and the job's own toolchain.
+files.pythonhosted.org:443
+
+# GitHub blog and changelog, fetched by the Copilot CLI.
+github.blog:443
+
+# GitHub over HTTPS: checkouts, hook repositories cloned by prek,
+# and release downloads.
+github.com:443
+
+# Go project site: the release index prek reads before it downloads
+# a Go toolchain.
+go.dev:443
+
+# Node.js distribution downloads, reached by node-based tooling in
+# sessions.
+nodejs.org:443
+
+# Go module proxy: 'go' builds and tests, and Go-based hooks.
+proxy.golang.org:443
+
+# Python Package Index: uv and pip installs for hooks, tests and the
+# job's own toolchain.
+pypi.org:443
+
+# npm registry: the job installs the Copilot CLI and aislop from its
+# lockfile, and node-based hooks install their packages.
+registry.npmjs.org:443
+
+# Astral uv and Python build downloads: the job's setup-uv step and
+# uv inside sessions.
+releases.astral.sh:443
+
+# Google Cloud Storage: downloads by the 'go' command. A general
+# storage host, kept because Go modules do not install without it.
+storage.googleapis.com:443
+
+# Go checksum database, consulted by 'go' for every module download.
+sum.golang.org:443
