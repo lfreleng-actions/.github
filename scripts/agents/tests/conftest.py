@@ -42,6 +42,7 @@ STUB_SOURCE = textwrap.dedent(
     # query does), and a newline separator would split it into several
     # apparent arguments.
     printf '%s\\0' "$0" "$@" > "$STUB_ARGV"
+    if [ -n "${STUB_ENV:-}" ]; then env > "$STUB_ENV"; fi
     if [ -n "${STUB_STDOUT:-}" ]; then cat "$STUB_STDOUT"; fi
     exit "${STUB_EXIT:-0}"
     """
@@ -63,11 +64,18 @@ class Stub:
 
     argv_file: Path
     stdout_file: Path
+    env_file: Path
 
     def argv(self) -> list[str]:
         """Return the recorded invocation, one element per argument."""
         records = self.argv_file.read_bytes().split(b"\0")
         return [record.decode() for record in records[:-1]]
+
+    def env(self) -> dict[str, str]:
+        """Return the environment the stub ran with."""
+        lines = self.env_file.read_text(encoding="utf-8").splitlines()
+        pairs = (line.partition("=") for line in lines)
+        return {name: value for name, _, value in pairs}
 
 
 @dataclass(frozen=True)
@@ -175,11 +183,13 @@ def make_stub(
     def factory(name: str, stdout: str, exit_code: int = 0) -> Stub:
         stdout_file = write(tmp_path / f"{name}.stdout", stdout)
         argv_file = tmp_path / f"{name}.argv"
+        env_file = tmp_path / f"{name}.env"
         _ = write(stub_path / name, STUB_SOURCE, executable=True)
         clean_env["STUB_ARGV"] = str(argv_file)
+        clean_env["STUB_ENV"] = str(env_file)
         clean_env["STUB_STDOUT"] = str(stdout_file)
         clean_env["STUB_EXIT"] = str(exit_code)
-        return Stub(argv_file=argv_file, stdout_file=stdout_file)
+        return Stub(argv_file=argv_file, stdout_file=stdout_file, env_file=env_file)
 
     return factory
 
