@@ -149,7 +149,6 @@ def test_clean_report_passes(
     assert stub.argv()[1:] == ["ci", "--staged"]
 
 
-@pytest.mark.xfail(strict=True, reason="the gate leaves aislop's telemetry on")
 @pytest.mark.parametrize("inherited", [None, "0"])
 def test_aislop_runs_with_telemetry_off(
     run_script: Callable[..., Outcome],
