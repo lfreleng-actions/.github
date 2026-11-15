@@ -20,8 +20,6 @@ import sys
 import textwrap
 from pathlib import Path
 
-import pytest
-
 ACTION_DIR = Path(__file__).resolve().parent.parent
 ACTION = ACTION_DIR / "action.yaml"
 MINIMUM_MINOR = 11
@@ -116,7 +114,6 @@ def old_python(tmp_path: Path) -> tuple[Path, Path]:
     return stub, marker
 
 
-@pytest.mark.xfail(strict=True, reason="issue #363")
 def test_version_spec_excludes_python_below_3_11() -> None:
     """The setup-python spec cannot resolve to a Python below 3.11."""
     spec = python_version_spec()
@@ -141,7 +138,6 @@ def test_step_runs_comparison_on_supported_python(tmp_path: Path) -> None:
     assert "verdict=pass" in (tmp_path / "output").read_text(encoding="utf-8")
 
 
-@pytest.mark.xfail(strict=True, reason="issue #363")
 def test_step_refuses_python_below_3_11(tmp_path: Path) -> None:
     """An interpreter reporting 3.9 stops the step before the script."""
     stub, marker = old_python(tmp_path)
@@ -152,7 +148,6 @@ def test_step_refuses_python_below_3_11(tmp_path: Path) -> None:
     assert (tmp_path / "output").read_text(encoding="utf-8") == ""
 
 
-@pytest.mark.xfail(strict=True, reason="issue #363")
 def test_step_refuses_missing_python(tmp_path: Path) -> None:
     """An interpreter that cannot start stops the step with an error."""
     proc = run_step(tmp_path, str(tmp_path / "absent"))

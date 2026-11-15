@@ -75,12 +75,14 @@ runs:
     # the caller's PATH names. An explicit version stops setup-python
     # reading .python-version from the caller's workspace, and
     # update-environment 'false' leaves the caller's PATH untouched.
+    # The range takes the newest cached Python 3.11 or later, so a
+    # hosted runner needs no download, and never selects an older one.
     - name: 'Set up Python'
       id: 'setup-python'
       # yamllint disable-line rule:line-length
       uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
       with:
-        python-version: '3.x'
+        python-version: '>=3.11'
         update-environment: 'false'
 
     - name: 'Compare findings'
@@ -99,6 +101,14 @@ runs:
         INPUT_ANNOTATE: ${{ inputs.annotate }}
       run: |
         set -euo pipefail
+        # Refuse an interpreter older than the script supports before
+        # it can fail part way, with no outputs written.
+        if ! "${PYTHON}" -I -c \
+          'import sys; sys.exit(sys.version_info < (3, 11))'; then
+          echo "::error title=findings-ratchet::Python 3.11 or later" \
+            "is required; ${PYTHON} is older or did not start"
+          exit 2
+        fi
         # The '--name=value' form keeps a value that starts with '-'
         # from being read as an option.
         "${PYTHON}" "${GITHUB_ACTION_PATH}/findings_ratchet.py" \
