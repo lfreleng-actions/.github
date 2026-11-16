@@ -29,6 +29,16 @@
 # stamp without migrating: publish under the new category first, then
 # delete the superseded analysis sets in every repository.
 #
+# Alert fingerprints: the REST API, unlike codeql-action/upload-sarif,
+# computes no partialFingerprints, so code scanning would match an alert
+# only by file and line, and any edit that moved a finding would close
+# its alert (and its dismissal) and open a new one. A step before the
+# upload runs .github/scripts/sarif_fingerprint.py, which gives every
+# result a content-based 'lfrelengContentHash/v1' fingerprint (rule,
+# file, flagged line text, finding subject, ordinal), and refuses to
+# upload a SARIF in which any result lacks one. Changing the hash
+# inputs re-keys every alert once, so treat it like a category change.
+#
 # Requires a PAT with cross-repo code-scanning write access, read
 # from the AISLOP_SARIF_PAT secret; a workflow_dispatch 'token' input
 # can override it for ad-hoc runs (note: dispatch inputs are stored
@@ -214,6 +224,52 @@ jobs:
           path: '${{ runner.temp }}/aislop-metrics/'
           retention-days: 7
 
+      # Fetch the shared fingerprint script from this repository at the
+      # running workflow's commit. It lands after the scan so the scan
+      # never sees it, in a directory no finding can name.
+      - name: 'Checkout SARIF fingerprint script'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: '.sarif-fingerprint'
+          persist-credentials: false
+          sparse-checkout: '.github/scripts/sarif_fingerprint.py'
+          sparse-checkout-cone-mode: false
+
+      # Resolve the interpreter here rather than take whatever python3
+      # PATH names. An explicit version stops setup-python reading a
+      # .python-version from the repository under audit, and
+      # update-environment 'false' leaves PATH untouched.
+      - name: 'Set up Python'
+        id: 'setup-python'
+        # yamllint disable-line rule:line-length
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '>=3.11'
+          update-environment: 'false'
+
+      # Give every result a content-based fingerprint so an alert
+      # follows its finding when lines move; see the header comment.
+      # Line text comes from the checkout under audit. This stays apart
+      # from the publish step, whose trap would stop gha-workflow-linter
+      # tracing the interpreter back to setup-python.
+      - name: 'Fingerprint SARIF results'
+        id: 'fingerprint'
+        shell: bash
+        env:
+          PYTHON: '${{ steps.setup-python.outputs.python-path }}'
+          SCRIPT: '.sarif-fingerprint/.github/scripts/sarif_fingerprint.py'
+          SARIF_FILE: '${{ steps.scan.outputs.sarif-file }}'
+        run: |
+          # Fingerprint SARIF results
+          set -euo pipefail
+          output="${RUNNER_TEMP}/fingerprinted.sarif"
+          "${PYTHON}" -I "${SCRIPT}" \
+            "--input=${SARIF_FILE}" \
+            "--output=${output}" \
+            "--source-root=${GITHUB_WORKSPACE}"
+          echo "sarif-file=${output}" >> "$GITHUB_OUTPUT"
+
       - name: 'Publish SARIF to code scanning'
         shell: bash
         env:
@@ -221,7 +277,7 @@ jobs:
           ORG: '${{ needs.discover.outputs.org }}'
           REPO: '${{ matrix.repo }}'
           DEFAULT_BRANCH: '${{ matrix.default_branch }}'
-          SARIF_FILE: '${{ steps.scan.outputs.sarif-file }}'
+          SARIF_FILE: '${{ steps.fingerprint.outputs.sarif-file }}'
           HEAD_SHA: '${{ steps.head.outputs.sha }}'
         run: |
           # Publish SARIF to code scanning
@@ -253,6 +309,15 @@ jobs:
                       and all(.runs[]; .automationDetails.id == "aislop/")' \
                "${stamped_file}" > /dev/null; then
             echo "::error::SARIF category stamp failed for ${REPO}" >&2
+            exit 1
+          fi
+          # An unfingerprinted result would fall back to line matching
+          # and reopen its alert whenever its line moves.
+          if ! jq -e 'all(.runs[].results[]?;
+                          .partialFingerprints["lfrelengContentHash/v1"]
+                          | type == "string" and length > 0)' \
+               "${stamped_file}" > /dev/null; then
+            echo "::error::SARIF fingerprinting failed for ${REPO}" >&2
             exit 1
           fi
           gzip -c "${stamped_file}" | base64 -w0 > "${payload_file}"
