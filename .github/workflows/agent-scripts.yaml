@@ -7,7 +7,9 @@
 # document describes (the aislop gate, the Gerrit amend, review-thread
 # resolution); the tests define what "correct" means for each, including
 # every false-pass case found in review. This workflow keeps that
-# definition enforced rather than merely written down.
+# definition enforced rather than merely written down. The same suite
+# run also covers the organisation scripts under .github/scripts, such
+# as the SARIF fingerprinter both SARIF publishers call.
 
 name: 'Agent Scripts 🧪'
 
@@ -17,6 +19,7 @@ on:
   pull_request:
     paths:
       - 'scripts/agents/**'
+      - '.github/scripts/**'
       - 'pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/agent-scripts.yaml'

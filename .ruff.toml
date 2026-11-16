@@ -54,3 +54,6 @@ notice-rgx = "SPDX-FileCopyrightText:\\s+\\d{4}"
 # package; the tests stay out of the scripts/agents "tests" package.
 "actions/findings-ratchet/*.py" = ["T201", "INP001"]
 "actions/findings-ratchet/tests/*.py" = ["S101", "PLR2004", "S603", "INP001"]
+# The SARIF fingerprint suite runs its script as a subprocess, like the
+# findings-ratchet suite, and the directory is not a package.
+".github/scripts/tests/*.py" = ["S101", "PLR2004", "S603", "INP001"]

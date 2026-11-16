@@ -400,6 +400,8 @@ schedule (`0 6 * * 1-5`, 06:00 UTC) it:
    `POST /code-scanning/sarifs` against the **default-branch HEAD** (so
    results land in the default-branch alert list, not a PR-scoped
    analysis).
+   Every result first gains a content-based fingerprint; see
+   [SARIF alert fingerprints](#sarif-alert-fingerprints).
 
 A final job renders the organisation posture summary to the run's step
 summary. When a **scheduled** run fails or a maintainer cancels it, the
@@ -645,6 +647,8 @@ zizmor publisher at 06:00) it:
    repository's code scanning via `POST /code-scanning/sarifs` against
    the **default-branch HEAD**. Findings appear in each repository's
    **Security → Code scanning** tab under the `aislop` tool.
+   Every result first gains a content-based fingerprint; see
+   [SARIF alert fingerprints](#sarif-alert-fingerprints).
 4. Aggregates per-repository score metrics into a ranked, worst-first
    table in the run's step summary, answering "which repositories have
    the biggest problems?" at a glance. A **Coverage** column marks
@@ -680,6 +684,39 @@ three optional inputs as the zizmor publisher (`org`, `repo`, and
 [Manual dispatch inputs](#manual-dispatch-inputs) above for their
 semantics. The `token` input falls back to the `AISLOP_SARIF_PAT`
 secret when blank.
+
+### SARIF alert fingerprints
+
+Both publishers upload through the code-scanning REST API, which, unlike
+`github/codeql-action/upload-sarif`, computes no `partialFingerprints`.
+Without one, code scanning matches an alert by file and line alone, so
+an edit that moves a finding closes its alert, dismissal included, and
+opens a new one.
+
+Before the category stamp, each publish job runs
+[`.github/scripts/sarif_fingerprint.py`](.github/scripts/sarif_fingerprint.py)
+over the SARIF. It gives every result that lacks one a
+`lfrelengContentHash/v1` fingerprint hashed from the rule ID, the file
+path, the flagged line's text read from the checkout with whitespace
+collapsed, the finding's subject, and an ordinal among identical
+findings in that file. The subject keeps distinct findings of one rule
+on one line apart whatever their order. aislop's
+`security/vulnerable-dependency` takes the package name, as the
+findings ratchet counts it; every other rule takes the message text
+with each standalone numeral masked, so a count, limit or line number
+quoted in a message does not re-key the finding, while digits inside a
+name, such as the selector `.a1`, still tell findings apart. A result
+with no readable line hashes its subject without the line text. Line
+numbers never enter the hash, so an alert and its triage follow the
+finding when lines above it change. Editing the flagged line itself,
+or a scanner rewording a message beyond its numerals, yields a new
+alert. Fingerprints a scanner emits stay untouched, and the upload
+fails if any result lacks the new key.
+
+Alerts uploaded before fingerprinting carry none, so the first upload
+with fingerprints may close them and open fresh ones once; redo those
+dismissals once. Changing the hash inputs re-keys every alert the same
+way, so treat that like a category change.
 
 ### Repository scope policy
 
