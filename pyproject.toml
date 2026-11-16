@@ -24,7 +24,11 @@ dev = ["basedpyright==1.40.2", "pytest==9.2.0"]
 sweep = ["gha-workflow-linter==1.11.0"]
 
 [tool.pytest.ini_options]
-testpaths = ["scripts/agents/tests", "actions/findings-ratchet/tests"]
+testpaths = [
+    "scripts/agents/tests",
+    "actions/findings-ratchet/tests",
+    ".github/scripts/tests",
+]
 # strict xfail is the AGENTS.md §6.5 contract: a test marked as expected to fail
 # that passes fails the run, so the marker cannot outlive its fix.
 xfail_strict = true
