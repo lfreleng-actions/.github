@@ -149,6 +149,26 @@ def test_clean_report_passes(
     assert stub.argv()[1:] == ["ci", "--staged"]
 
 
+@pytest.mark.parametrize("inherited", [None, "0"])
+def test_aislop_runs_with_telemetry_off(
+    run_script: Callable[..., Outcome],
+    staged_markdown: GitRepo,
+    make_stub: Callable[[str, str, int], Stub],
+    inherited: str | None,
+) -> None:
+    """The gate runs aislop with its usage reporting turned off.
+
+    Left alone, aislop reports usage to a third party. The gate turns
+    that off whatever the caller's environment says, so a scan never
+    depends on reaching an analytics host.
+    """
+    stub = make_stub("aislop", report(lint_skipped=True), 0)
+    extra = {} if inherited is None else {"AISLOP_NO_TELEMETRY": inherited}
+    outcome = run_script(SCRIPT, "--staged", cwd=staged_markdown.path, extra_env=extra)
+    assert outcome.returncode == EXIT_CLEAN, outcome.stderr
+    assert stub.env().get("AISLOP_NO_TELEMETRY") == "1"
+
+
 def test_warning_only_report_fails(
     run_script: Callable[..., Outcome],
     staged_markdown: GitRepo,

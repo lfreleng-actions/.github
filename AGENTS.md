@@ -489,6 +489,13 @@ Whether a finding was introduced or inherited decides only where its
 fix is committed; judge that by hand, since findings carry no stable
 identity across scans.
 
+**Run aislop with its telemetry off.** aislop reports usage to a
+third-party analytics host unless `AISLOP_NO_TELEMETRY=1` is set, on a
+CI runner too. The gate script sets it. An agent that runs `aislop` any
+other way MUST set it, and an automated pipeline (§11.6) MUST set it in
+the environment of the job that runs its agent, which also covers
+aislop run from a `prek` hook.
+
 ## 10. Pull Requests
 
 ### 10.1 PR title must match the commit subject
@@ -807,6 +814,11 @@ Recorded so agents stop rediscovering them.
   indistinguishable from a clean pass. The gate script checks the
   report's engine status by outcome, so bundled and system engines both
   count; `aislop doctor` shows which are available.
+- **`CI=true` does not stop aislop's telemetry.** Verified against
+  0.20.0: aislop tests its configuration before `CI`, and the default
+  configuration enables telemetry, so the `CI` test is never reached.
+  `AISLOP_NO_TELEMETRY=1` and `DO_NOT_TRACK=1` are tested first and do
+  stop it (§9.1). The host is `eu.i.posthog.com`.
 - **`git rebase` strips signatures** unless run with `--gpg-sign`, and
   flattens merges unless run with `--rebase-merges` (§11.3).
 - **Sections 1 and 2 summarise rules that live elsewhere** and are the

@@ -25,6 +25,9 @@
 #   is absent and the scan under-reports, and an absent status settles
 #   nothing. Both fail.
 #
+#   The gate runs aislop with AISLOP_NO_TELEMETRY=1, whatever the
+#   caller's environment holds.
+#
 # Exit status
 #   0   clean: diagnostics array present and empty
 #   1   findings on the gated files
@@ -87,6 +90,11 @@ files="$(mktemp)"
 trap 'rm -f "$report" "$files"' EXIT
 
 scope_files "$mode" > "$files"
+
+# aislop reports usage to a third-party analytics host by default, on
+# a CI runner too. The gate has no use for that, and a job with
+# restricted egress should not have to allow the host.
+export AISLOP_NO_TELEMETRY=1
 
 # aislop's exit code is not the gate: it exits 0 on warning-only
 # reports. Capture the report and judge it on its content. The status
