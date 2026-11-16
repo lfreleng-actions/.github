@@ -414,6 +414,12 @@ github.com:443
 # GitLab; Anuket CI pipelines and source mirror.
 gitlab.com:443
 
+# Go project site: prek reads the release index here when it installs
+# a Go toolchain for a 'golang' hook, then downloads the archive from
+# dl.google.com. Reached by the code monkey bot's agent sessions in
+# repositories whose hooks need Go.
+go.dev:443
+
 # Grype vulnerability DB (anchore/scan-action/download-grype).
 grype.anchore.io:443
 

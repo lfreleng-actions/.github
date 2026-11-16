@@ -71,7 +71,8 @@ level. Each entry below says how the rest reach repositories.
   that talk to nothing beyond GitHub and a project Gerrit can load the
   shorter
   [`gerrit_servers.txt`](.github/harden-runner/lf-gerrit-servers/gerrit_servers.txt)
-  instead. See
+  instead. Each bot's agent job has a list of its own under
+  [`bots/`](.github/harden-runner/bots/). See
   [Harden-runner egress allow-list](#harden-runner-egress-allow-list)
   below for the wildcard matching rules, which are easy to get wrong.
 
@@ -175,7 +176,8 @@ loaded at runtime by
 [harden-runner-block-action](https://github.com/lfreleng-actions/harden-runner-block-action).
 The [directory README](.github/harden-runner/README.md) covers the file
 format and layout, including the list of Gerrit servers under
-[`lf-gerrit-servers/`](.github/harden-runner/lf-gerrit-servers/).
+[`lf-gerrit-servers/`](.github/harden-runner/lf-gerrit-servers/) and
+the bot agent lists under [`bots/`](.github/harden-runner/bots/).
 
 #### How entries match
 

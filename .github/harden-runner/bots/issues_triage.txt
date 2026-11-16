@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+#
+# Egress allow-list for the issues triage bot's agent job.
+#
+# The propose job of lfreleng-actions/github-issues-triage-bot runs a
+# read-only agent on a packet of issue text. This list is what that
+# one job may reach under 'egress-policy: block'. The bot's other
+# jobs keep the organisation list
+# (../lfreleng-actions/allow_list.txt).
+#
+# The session reads an offline packet, so the job needs GitHub, the
+# npm registry for the pinned Copilot CLI, and the model. Do not add
+# other hosts here.
+#
+# Evidence: harden-runner audit records of the seven agent sessions
+# that ran in audit mode, 6 October to 13 November 2026. Every one
+# reached these hosts and no other.
+#
+# Load it by explicit path with harden-runner-block-action:
+#
+#   - uses: lfreleng-actions/harden-runner-block-action@<sha>  # <version>
+#     with:
+#       config: 'lfreleng-actions//.github/harden-runner/bots/issues_triage.txt@<.github commit sha>'
+#
+# This file is not named 'allow_list.txt' on purpose; see
+# ../README.md for why a second file of that name breaks forks.
+#
+# Format: one host[:port] entry per line, sorted alphabetically
+# (LC_ALL=C), with a '# comment' directly above each entry.
+
+# GitHub hosted-runner control plane (hosted-compute orchestrator and
+# watchdog), reached by the runner itself after the job's steps.
+*.githubapp.com:443
+
+# Copilot model API and the CLI's telemetry. The host differs by
+# credential: api.enterprise.githubcopilot.com and
+# telemetry.enterprise.githubcopilot.com for a personal token,
+# api.githubcopilot.com for the job's own token.
+*.githubcopilot.com:443
+
+# GitHub REST API, reached by the Copilot CLI itself.
+api.github.com:443
+
+# Copilot CLI metrics endpoint.
+cafe.github.com:443
+
+# GitHub over HTTPS: checkout of the prompt assets.
+github.com:443
+
+# npm registry: the job installs the pinned Copilot CLI from its
+# lockfile.
+registry.npmjs.org:443

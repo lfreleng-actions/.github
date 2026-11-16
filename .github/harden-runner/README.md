@@ -82,6 +82,37 @@ have consumers load it by explicit path, which never falls back:
     config: 'lfreleng-actions//.github/harden-runner/lf-gerrit-servers/gerrit_servers.txt@<sha>'
 ```
 
+### Bot agent lists
+
+[`bots/`](bots/) holds one list for each bot's agent job: the job
+that runs a Copilot CLI session on issue or pull request text. That
+job reads text an outsider can write, so it gets the shortest list
+that lets it work, loaded in place of the organisation list.
+
+<!-- markdownlint-disable MD013 -->
+
+| List                                          | Agent job                                                |
+| --------------------------------------------- | -------------------------------------------------------- |
+| [`code_monkey.txt`](bots/code_monkey.txt)     | `author` in [github-code-monkey-bot][monkey]             |
+| [`code_review.txt`](bots/code_review.txt)     | `review` in [github-code-review-bot][review], both modes |
+| [`issues_triage.txt`](bots/issues_triage.txt) | `propose` in [github-issues-triage-bot][triage]          |
+
+<!-- markdownlint-enable MD013 -->
+
+Each list comes from harden-runner's audit records of that job, and
+its header gives the sessions and dates behind it. A bot loads its
+list by explicit path as `config`, as above, for the agent job
+alone; its other jobs keep the organisation list.
+
+These lists leave out hosts the organisation list allows for
+publishing and analytics: package upload endpoints, container
+registries and telemetry collectors. An agent session steered by
+hostile text can send data to any host it may reach, so a host
+belongs here when a session cannot work without it, and not because
+other CI uses it. When one repository's sessions need more, such as
+a container registry for an image build, give that repository a
+supplemental list and leave the bot's list alone.
+
 ## File format
 
 One `host[:port]` entry per line, sorted alphabetically (`LC_ALL=C`). A
@@ -120,9 +151,13 @@ Two safeguards back this up:
 - The daily [`allow-list-dns-check.yaml`][dns-check] workflow checks
   the organisation list and the Gerrit servers list on the default
   branch and at the latest release, and posts any hostname that no
-  longer resolves to `#releng-scm`.
+  longer resolves to `#releng-scm`. It does not check the bot agent
+  lists.
 
 [hr]: https://github.com/step-security/harden-runner
 [block]: https://github.com/lfreleng-actions/harden-runner-block-action
 [audit]: https://github.com/lfreleng-actions/github-network-audit
 [dns-check]: ../workflows/allow-list-dns-check.yaml
+[monkey]: https://github.com/lfreleng-actions/github-code-monkey-bot
+[review]: https://github.com/lfreleng-actions/github-code-review-bot
+[triage]: https://github.com/lfreleng-actions/github-issues-triage-bot
