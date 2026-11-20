@@ -41,3 +41,16 @@ updates:
       default-days: 7
       exclude:
         - 'gha-workflow-linter'
+
+  # .github/fuzz/requirements.txt: the hash-pinned Atheris the fuzz
+  # publisher installs into each repository's environment, and the
+  # agent-script tests run their end-to-end fuzz test under. The pip
+  # ecosystem rewrites the version and every --hash line together.
+  - package-ecosystem: 'pip'
+    directory: '/.github/fuzz'
+    schedule:
+      interval: 'weekly'
+    commit-message:
+      prefix: 'Build(deps)'
+    cooldown:
+      default-days: 7

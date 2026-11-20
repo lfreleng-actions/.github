@@ -9,7 +9,9 @@
 # every false-pass case found in review. This workflow keeps that
 # definition enforced rather than merely written down. The same suite
 # run also covers the organisation scripts under .github/scripts, such
-# as the SARIF fingerprinter both SARIF publishers call.
+# as the SARIF fingerprinter both SARIF publishers call, and the fuzz
+# publisher's script, whose end-to-end test fuzzes a fixture under the
+# Atheris pin in .github/fuzz/requirements.txt.
 
 name: 'Agent Scripts 🧪'
 
@@ -22,7 +24,10 @@ on:
       - '.github/scripts/**'
       - 'pyproject.toml'
       - 'uv.lock'
+      - '.github/fuzz/**'
       - '.github/workflows/agent-scripts.yaml'
+      - '.github/workflows/fuzz-sarif-publish.yaml'
+      - '.github/workflows/fuzz-sarif-repository.yaml'
 
 permissions: {}
 
@@ -71,6 +76,32 @@ jobs:
           # --locked refuses to proceed if uv.lock is out of date.
           uv sync --locked
 
+      # The fuzz publisher's end-to-end test runs a fixture harness
+      # under real Atheris, on the CPython the harness contract names,
+      # and skips when FUZZ_E2E_PYTHON is unset.
+      - name: 'Set up Python for Atheris'
+        id: 'atheris-python'
+        # yamllint disable-line rule:line-length
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.13'
+          update-environment: 'false'
+
+      - name: 'Install Atheris'
+        id: 'atheris'
+        shell: 'bash'
+        env:
+          PYTHON: '${{ steps.atheris-python.outputs.python-path }}'
+          UV_PYTHON_DOWNLOADS: 'never'
+        run: |
+          set -euo pipefail
+          venv="${RUNNER_TEMP}/atheris"
+          uv venv --python "${PYTHON}" "${venv}"
+          uv pip install --python "${venv}/bin/python" \
+            --require-hashes --only-binary=:all: \
+            -r .github/fuzz/requirements.txt
+          echo "python=${venv}/bin/python" >> "$GITHUB_OUTPUT"
+
       - name: 'Type-check the test suite'
         shell: 'bash'
         run: |
@@ -84,6 +115,8 @@ jobs:
 
       - name: 'Run the contract tests'
         shell: 'bash'
+        env:
+          FUZZ_E2E_PYTHON: '${{ steps.atheris.outputs.python }}'
         run: |
           set -euo pipefail
           # The suite stubs aislop and gh on PATH and drives git against

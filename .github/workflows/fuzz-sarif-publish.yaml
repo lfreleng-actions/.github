@@ -1,0 +1,389 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Organisation-wide fuzz SARIF publisher.
+#
+# Once a day this workflow finds every in-scope organisation repository
+# that carries a Python fuzz harness (a tracked .py file with a line
+# containing 'import atheris'; see the harness contract in the README),
+# runs each harness for a bounded time and publishes what fails to that
+# repository's default-branch code scanning under the tool name 'fuzz'.
+# Scope comes from the shared repo-discovery.yaml workflow and
+# .github/scan-scope.json, as for the zizmor and aislop publishers.
+#
+# Trust boundary: a fuzzer executes the repository it fuzzes and every
+# package that repository depends on. So, unlike the other publishers,
+# no job that holds a secret runs repository code. Per repository,
+# fuzz-sarif-repository.yaml runs a fuzz job that holds no secret and
+# hands its logs and failing inputs over as an artifact, then a publish
+# job that holds FUZZ_SARIF_PAT and treats that artifact as hostile
+# data. The select job below decides from the files at each
+# repository's default-branch head, read with git alone; it executes
+# nothing from them.
+#
+# Known failures are replayed: code scanning closes an alert when the
+# latest upload in its category stops reporting it, and a fuzzer does
+# not find the same failure twice on demand. The fuzz job saves each
+# failing input in the Actions cache and runs it again on the next run,
+# so an alert closes only when its input passes.
+#
+# Analysis lineage and fingerprints follow the aislop publisher: the
+# publish job stamps automationDetails.id 'fuzz/' (category 'fuzz') and
+# runs .github/scripts/sarif_fingerprint.py before the upload. Do not
+# change either without migrating; see aislop-sarif-publish.yaml.
+#
+# Requires a PAT with cross-repo code-scanning write access, read from
+# the FUZZ_SARIF_PAT secret. Unlike the other publishers, there is no
+# workflow_dispatch 'token' override: every job of the run, the fuzz
+# jobs that execute repository code included, can read the dispatch
+# event and its inputs. A fine-grained token needs Code scanning
+# alerts: read and write, Contents: read and Metadata: read. The
+# FUZZ_EVIDENCE_KEY secret, a random string of at least 32 characters,
+# signs which input reproduced each published result, so a fuzz job
+# that forges cached state cannot close another repository's alert.
+# See README.
+
+name: 'Fuzz SARIF Publish 🐒'
+
+# yamllint disable-line rule:truthy
+on:
+  schedule:
+    # Daily at 08:00 UTC, after the aislop publisher at 07:00
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      org:
+        # yamllint disable-line rule:line-length
+        description: 'Organisation to scan (name only); blank uses the org running this workflow'
+        required: false
+        default: ''
+      repo:
+        # yamllint disable-line rule:line-length
+        description: 'Scan only these repositories (names only, comma or space separated) if in scope; blank scans all'
+        required: false
+        default: ''
+      fuzz_seconds:
+        # yamllint disable-line rule:line-length
+        description: 'Seconds to fuzz each harness; shared out when a repository would pass 45 minutes'
+        required: false
+        type: number
+        default: 300
+      dry_run:
+        # yamllint disable-line rule:line-length
+        description: 'Upload nothing and save no state; attach each SARIF to the run instead'
+        required: false
+        type: boolean
+        default: false
+
+permissions: {}
+
+# Turn off GitHub CLI telemetry; see aislop-sarif-publish.yaml.
+env:
+  GH_TELEMETRY: 'false'
+
+concurrency:
+  group: 'fuzz-sarif-publish'
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    name: 'Discover repositories'
+    permissions:
+      contents: read
+    # Shared with the other publishers, so every scanner covers the
+    # same repository selection.
+    uses: '$/.github/workflows/repo-discovery.yaml'
+    with:
+      org: '${{ inputs.org || github.repository_owner }}'
+      only-repo: '${{ inputs.repo }}'
+      extra-include: '${{ vars.FUZZ_SCAN_INCLUDE }}'
+      extra-exclude: '${{ vars.FUZZ_SCAN_EXCLUDE }}'
+    secrets:
+      token: '${{ secrets.FUZZ_SARIF_PAT }}'
+
+  select:
+    name: 'Find fuzz harnesses'
+    needs: 'discover'
+    if: needs.discover.outputs.count != '0'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 60
+    # The token reads repositories the anonymous git protocol may not
+    # serve; running here satisfies zizmor's secrets-outside-env.
+    environment: 'production'
+    permissions:
+      contents: read
+    outputs:
+      matrix: '${{ steps.find.outputs.matrix }}'
+      count: '${{ steps.find.outputs.count }}'
+      unreadable: '${{ steps.find.outputs.unreadable }}'
+    steps:
+      # Load the egress allow-list out-of-band from lfreleng-actions/.github
+      # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
+        with:
+          config: '@dfa09089d9d88230380539d2116810910347d378'  # v0.22.0
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c  # v2.23.0
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      # Fetch each default-branch head into an empty repository and
+      # search its tree with git grep. Nothing is checked out and no
+      # repository configuration, hook or attribute is read, so no file
+      # from the repository runs. The token reaches git through
+      # GIT_CONFIG_* variables, never the command line.
+      - name: 'Find harnesses at each default-branch head'
+        id: 'find'
+        shell: bash
+        env:
+          TOKEN: '${{ secrets.FUZZ_SARIF_PAT }}'
+          ORG: '${{ needs.discover.outputs.org }}'
+          MATRIX: '${{ needs.discover.outputs.matrix }}'
+        run: |
+          # Find harnesses at each default-branch head
+          set -euo pipefail
+          export LC_ALL=C GIT_TERMINAL_PROMPT=0
+          basic="$(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)"
+          echo "::add-mask::${basic}"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0='http.https://github.com/.extraheader'
+          export GIT_CONFIG_VALUE_0="Authorization: Basic ${basic}"
+          unset TOKEN basic
+          segment='[A-Za-z0-9_.][A-Za-z0-9_.-]*'
+          found="${RUNNER_TEMP}/fuzz-select.jsonl"
+          unreadable=()
+          : > "${found}"
+          while IFS=$'\t' read -r repo branch; do
+            work="$(mktemp -d)"
+            git init -q "${work}"
+            if ! git -C "${work}" fetch -q --depth=1 --no-tags \
+                 "https://github.com/${ORG}/${repo}.git" \
+                 "refs/heads/${branch}"; then
+              echo "::error::cannot read ${ORG}/${repo}@${branch}"
+              unreadable+=("${repo}")
+              rm -rf "${work}"
+              continue
+            fi
+            commit="$(git -C "${work}" rev-parse FETCH_HEAD)"
+            rc=0
+            git -C "${work}" grep -z -l -F 'import atheris' "${commit}" \
+              -- '*.py' > "${work}.paths" || rc=$?
+            if [ "${rc}" -gt 1 ]; then
+              echo "::error::cannot search ${ORG}/${repo}@${commit}"
+              unreadable+=("${repo}")
+              rm -rf "${work}" "${work}.paths"
+              continue
+            fi
+            harnesses=()
+            while IFS= read -r -d '' match; do
+              path="${match#"${commit}:"}"
+              # Only a regular file (blob mode 100644 or 100755) whose
+              # every segment is plain is a harness; a symlink or a
+              # path with an odd segment is skipped and named.
+              mode="$(git -C "${work}" ls-tree "${commit}" \
+                        -- ":(literal)${path}" \
+                      | cut -d' ' -f1)"
+              if [[ ! "${path}" =~ ^(${segment}/)*${segment}\.py$ ]] \
+                 || [[ "/${path}/" == */./* || "/${path}/" == */../* ]] \
+                 || [[ "${mode}" != 100644 && "${mode}" != 100755 ]]; then
+                echo "::warning::${ORG}/${repo}: skipping harness path" \
+                     "$(printf '%q' "${path}")"
+                continue
+              fi
+              harnesses+=("${path}")
+            done < "${work}.paths"
+            rm -rf "${work}" "${work}.paths"
+            if [ "${#harnesses[@]}" -eq 0 ]; then
+              continue
+            fi
+            echo "${ORG}/${repo}@${commit}: ${#harnesses[@]} harness(es)"
+            printf '%s\n' "${harnesses[@]}" | sort | jq -R . \
+              | jq -cs --arg repo "${repo}" --arg branch "${branch}" \
+                  --arg commit "${commit}" \
+                  '{repo: $repo, default_branch: $branch, commit: $commit,
+                    harnesses: (. | tojson), count: length}' >> "${found}"
+          done < <(jq -r '.[] | [.repo, .default_branch] | @tsv' \
+                     <<< "${MATRIX}")
+          matrix="$(jq -cs '.' "${found}")"
+          {
+            echo "matrix=${matrix}"
+            echo "count=$(jq 'length' <<< "${matrix}")"
+            echo "unreadable=${unreadable[*]}"
+          } >> "$GITHUB_OUTPUT"
+
+  repository:
+    name: '${{ matrix.repo }}'
+    needs:
+      - 'discover'
+      - 'select'
+    if: needs.select.outputs.count != '0'
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include: ${{ fromJson(needs.select.outputs.matrix) }}
+    # A reusable workflow per repository gives each repository's
+    # publish job its own fuzz job's outputs (needs.fuzz), so publish
+    # takes its results by the artifact ID that fuzz job reported. A
+    # plain matrix job sees only one, arbitrary, set of outputs.
+    uses: '$/.github/workflows/fuzz-sarif-repository.yaml'
+    with:
+      org: '${{ needs.discover.outputs.org }}'
+      repo: '${{ matrix.repo }}'
+      default_branch: '${{ matrix.default_branch }}'
+      commit: '${{ matrix.commit }}'
+      harnesses: '${{ matrix.harnesses }}'
+      fuzz_seconds: ${{ inputs.fuzz_seconds || 300 }}
+      dry_run: ${{ inputs.dry_run || false }}
+    secrets:
+      token: '${{ secrets.FUZZ_SARIF_PAT }}'
+      evidence_key: '${{ secrets.FUZZ_EVIDENCE_KEY }}'
+
+  summarise:
+    name: 'Summarise organisation results'
+    needs:
+      - 'discover'
+      - 'select'
+      - 'repository'
+    if: always() && needs.discover.outputs.count != '0'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    permissions:
+      actions: read  # reads this run's job conclusions for the table
+    steps:
+      # Load the egress allow-list out-of-band from lfreleng-actions/.github
+      # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
+        with:
+          config: '@dfa09089d9d88230380539d2116810910347d378'  # v0.22.0
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c  # v2.23.0
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      # The table reads job conclusions from the Actions API, not from
+      # artifacts: any fuzz job can upload an artifact under any name.
+      - name: 'Render organisation table'
+        shell: bash
+        env:
+          GH_TOKEN: '${{ github.token }}'
+          ORG: '${{ needs.discover.outputs.org }}'
+          MATRIX: '${{ needs.select.outputs.matrix }}'
+          UNREADABLE: '${{ needs.select.outputs.unreadable }}'
+          SELECT_RESULT: '${{ needs.select.result }}'
+          RUN_URL: '/repos/${{ github.repository }}/actions/runs'
+          RUN_ID: '${{ github.run_id }}'
+          RUN_ATTEMPT: '${{ github.run_attempt }}'
+        run: |
+          # Render organisation table
+          set -euo pipefail
+          jobs="$(gh api --paginate \
+            "${RUN_URL}/${RUN_ID}/attempts/${RUN_ATTEMPT}/jobs?per_page=100" \
+            --jq '.jobs[] | {name, conclusion}' | jq -s '.')"
+          {
+            echo "## Fuzz SARIF publish: ${ORG}"
+            echo
+            if [ "${SELECT_RESULT}" != 'success' ]; then
+              echo "Harness discovery ended with: ${SELECT_RESULT}"
+            elif [ "$(jq 'length' <<< "${MATRIX:-[]}")" -eq 0 ]; then
+              echo 'No in-scope repository carries a fuzz harness.'
+            else
+              echo '| Repository | Harnesses | Fuzz | Publish |'
+              echo '| --- | --- | --- | --- |'
+              jq -r --argjson jobs "${jobs}" '.[]
+                | .repo as $r
+                | ($jobs | map(select(.name == "\($r) / Fuzz"))
+                   | .[0].conclusion // "not run") as $fuzz
+                | ($jobs | map(select(.name == "\($r) / Publish"))
+                   | .[0].conclusion // "not run") as $publish
+                | "| `\($r)` | \(.count) | \($fuzz) | \($publish) |"' \
+                <<< "${MATRIX}"
+            fi
+            if [ -n "${UNREADABLE}" ]; then
+              echo
+              echo "Unreadable, not fuzzed: ${UNREADABLE}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # A repository discovery could not read was not fuzzed, and
+          # absence is never read as clean.
+          if [ -n "${UNREADABLE}" ]; then
+            echo "::error::unreadable repositories: ${UNREADABLE}" >&2
+            exit 1
+          fi
+
+  notify-failure:
+    name: 'Notify Slack on failure'
+    needs:
+      - 'discover'
+      - 'select'
+      - 'repository'
+      - 'summarise'
+    # Alert #releng-scm when the scheduled organisation run breaks, as
+    # the aislop publisher does: scheduled runs only, and only when a
+    # needed job failed or was cancelled.
+    if: >-
+      ${{ always()
+      && github.event_name == 'schedule'
+      && (contains(needs.*.result, 'failure')
+      || contains(needs.*.result, 'cancelled')) }}
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    # The Slack bot token is an environment-scoped secret; running here
+    # also satisfies zizmor's secrets-outside-env audit.
+    environment: 'production'
+    permissions: {}
+    steps:
+      # Load the egress allow-list out-of-band from lfreleng-actions/.github
+      # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
+      # The pinned allow-list permits slack.com, so the notification below
+      # reaches Slack under the block egress policy.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
+        with:
+          config: '@dfa09089d9d88230380539d2116810910347d378'  # v0.22.0
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c  # v2.23.0
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Notify Slack of fuzz publish failure'
+        # yamllint disable-line rule:line-length
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d  # v4.0.0
+        with:
+          method: 'chat.postMessage'
+          token: "${{ secrets.SLACK_BOT_TOKEN }}"
+          # yamllint disable rule:line-length
+          payload: |
+            channel: "${{ vars.SLACK_CHANNEL_ID }}"
+            text: "🐒 *Fuzz SARIF Publish failed* in ${{ github.repository }}"
+            blocks:
+              - type: "header"
+                text:
+                  type: "plain_text"
+                  text: "🐒 Fuzz SARIF Publish failed"
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: "The scheduled organisation-wide *fuzz* run failed. Default-branch fuzz alerts may be stale until it re-runs successfully."
+              - type: "context"
+                elements:
+                  - type: "mrkdwn"
+                    text: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+          # yamllint enable rule:line-length
