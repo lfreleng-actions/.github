@@ -44,6 +44,10 @@ notice-rgx = "SPDX-FileCopyrightText:\\s+\\d{4}"
 # CLI scripts whose stdout is the product: printing is the point, and a
 # flat scripts directory is not a package.
 ".github/scripts/*.py" = ["T201", "INP001"]
+# The fuzz publisher's fuzz side exists to run the harnesses it is
+# given, so every subprocess call there executes repository code by
+# design; the job running it holds no secret.
+".github/scripts/fuzz_runner.py" = ["S603"]
 # pytest suites: bare asserts are the idiom, the expected exit codes
 # and counts are the assertions, and the suite exists to drive git and
 # the scripts under test as subprocesses found on PATH.

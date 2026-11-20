@@ -29,6 +29,9 @@ testpaths = [
     "actions/findings-ratchet/tests",
     ".github/scripts/tests",
 ]
+# The fuzz publisher's tests import fuzz_publish.py and its modules,
+# which the workflow runs by path, from the directory beside them.
+pythonpath = [".github/scripts"]
 # strict xfail is the AGENTS.md §6.5 contract: a test marked as expected to fail
 # that passes fails the run, so the marker cannot outlive its fix.
 xfail_strict = true
@@ -44,7 +47,11 @@ include = [".github/scripts", "scripts/agents/tests", "actions/findings-ratchet"
 exclude = [".worktrees", ".mypy_cache", ".ruff_cache", ".venv"]
 # findings_ratchet.py imports sarif_log.py from its own directory, which
 # is how Python resolves it when the action runs the script by path.
-executionEnvironments = [{ root = "actions/findings-ratchet" }]
+# The fuzz publisher's tests import its modules the same way.
+executionEnvironments = [
+    { root = "actions/findings-ratchet" },
+    { root = ".github/scripts" },
+]
 # The pytest imports in scripts/agents/tests resolve from the .venv that
 # `uv sync` creates. It is not named here: basedpyright exits 3 when a
 # configured venv is absent, and pre-commit.ci never has one. The CI
@@ -56,5 +63,6 @@ strict = true
 # Match basedpyright's pythonVersion so both type-checking gates
 # enforce the same target regardless of the interpreter running them.
 python_version = "3.11"
+mypy_path = ".github/scripts"
 files = [".github/scripts", "scripts/agents/tests", "actions/findings-ratchet"]
 exclude = ["\\.worktrees"]
