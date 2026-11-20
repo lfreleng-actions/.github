@@ -139,6 +139,16 @@ level. Each entry below says how the rest reach repositories.
   attention are easy to spot. See
   [Organisation-wide aislop SARIF publisher](#organisation-wide-aislop-sarif-publisher)
   below for setup.
+- **[`fuzz-sarif-publish.yaml`](.github/workflows/fuzz-sarif-publish.yaml)**
+  — A scheduled (daily) workflow that finds every in-scope repository
+  carrying a Python fuzz harness, fuzzes each harness for a bounded
+  time in a job that holds no secret, and publishes what fails to that
+  repository's **default-branch** code scanning under the `fuzz` tool,
+  through the per-repository
+  [`fuzz-sarif-repository.yaml`](.github/workflows/fuzz-sarif-repository.yaml).
+  See
+  [Organisation-wide fuzz SARIF publisher](#organisation-wide-fuzz-sarif-publisher)
+  below for setup and the harness contract.
 - **[`agent-scripts.yaml`](.github/workflows/agent-scripts.yaml)** —
   Runs the contract tests for the `AGENTS.md` reference scripts under
   `scripts/agents/` on every pull request that touches them.
@@ -687,9 +697,270 @@ three optional inputs as the zizmor publisher (`org`, `repo`, and
 semantics. The `token` input falls back to the `AISLOP_SARIF_PAT`
 secret when blank.
 
+### Organisation-wide fuzz SARIF publisher
+
+The `fuzz-sarif-publish.yaml` workflow fuzzes the Python fuzz harnesses
+the organisation's repositories carry and publishes what fails to each
+repository's **default-branch** code scanning under the tool name
+`fuzz`, category `fuzz`. It runs daily at 08:00 UTC (`0 8 * * *`),
+after the aislop publisher.
+
+Unlike the zizmor and aislop publishers, which read a repository, a
+fuzzer **executes** the repository and everything it depends on. So
+the token never shares a job with fuzzed code:
+
+<!-- markdownlint-disable MD013 -->
+
+| Job | Trust | Holds | Does |
+| --- | --- | --- | --- |
+| Discover, Find fuzz harnesses | Trusted | The discovery token | Applies the shared scope, then fetches each default-branch head with git and keeps the repositories carrying at least one harness. Records that commit and the harness paths, and executes nothing |
+| Restore saved state, one per repository | **Untrusted** | Nothing | Restores the saved state and evidence binding from the cache and hands them to the fuzz job as one artifact |
+| Fuzz, one per repository | **Untrusted** | Nothing | Installs, replays saved failures, fuzzes, hands over logs and failing inputs as one artifact |
+| Publish, one per repository | Trusted | `FUZZ_SARIF_PAT`, `FUZZ_EVIDENCE_KEY` | Builds SARIF from the handover, fingerprints, stamps, uploads, waits, signs which input reproduced each result |
+| Summarise | Trusted | Nothing beyond the Slack alert's token | Renders the organisation table; alerts on a failed scheduled run |
+
+<!-- markdownlint-enable MD013 -->
+
+The publish job treats the handover as hostile data: it executes,
+imports and sources nothing from it or from the target checkout, and
+takes it by the artifact ID its own fuzz job reported, never by name.
+When the handover is missing, incomplete or fails validation it
+uploads nothing and fails; absence never reads as clean. A harness
+finding a failure is data, not a job failure.
+
+Code scanning closes an alert when the latest upload in its category
+stops reporting it, and a fuzzer does not find the same failure twice
+on demand. So the fuzz job saves each failing input and **replays** it
+first on the next run: an alert closes when its input passes, and not
+before.
+
+For each harness, in path order, the fuzz job:
+
+1. Replays every saved failing input with
+   `python <harness> -timeout=10 -rss_limit_mb=2048 <file>`. Exit 0
+   means fixed: it names each way the input has failed, letting those
+   alerts close, and keeps the input aside, replaying it and naming
+   those ways again on each run, until a publication acknowledges it
+   (see [Saved fuzz state](#saved-fuzz-state)). Otherwise it keeps the
+   input; one that
+   now fails another way still reports each way it failed before, and
+   those alerts stay open until it passes. A replay that cannot start
+   the harness, or overruns its wall-clock limit, gives no verdict, so
+   the publish job refuses that handover and uploads nothing rather
+   than close the input's alert.
+2. Fuzzes from the saved corpus for the harness's share of the budget,
+   and saves each new `crash-`, `timeout-` or `oom-` input, unless a
+   saved input already fails the same way. When it has no room for a
+   new kind of failure, because the harness already holds 20 saved
+   inputs, the input is over 1 MiB or its SHA-1 already names a saved
+   input, or a saved input has failed in
+   more than 4 ways, the fuzz job hands nothing over and fails: a
+   result published without its input could later close with no
+   replay.
+3. Bounds the corpus, minimising it with libFuzzer's merge, or starting
+   afresh, past 4000 files or 32 MiB.
+
+Each harness fuzzes for `fuzz_seconds` (300 by default), shared out
+evenly when a repository's harnesses would otherwise fuzz for more
+than 45 minutes in total. A wall-clock limit surrounds every process;
+one that overruns it counts as a harness that did not run.
+
+Each defect becomes one result at level `error`, whatever the count of
+inputs that reach it:
+
+<!-- markdownlint-disable MD013 -->
+
+| Failure | Rule ID | Location |
+| --- | --- | --- |
+| Uncaught exception | `fuzz/uncaught-exception` | The deepest frame inside the repository that is not the harness |
+| Input over the time limit | `fuzz/timeout` | The most recent such frame |
+| Input over the memory limit | `fuzz/out-of-memory` | The harness file |
+| Harness did not run | `fuzz/harness-error` | The harness file |
+
+<!-- markdownlint-enable MD013 -->
+
+Messages hold fixed wording, the harness path, the exception type and
+the function name, and nothing quoted from the fuzz run; a name that
+is not a plain dotted identifier becomes `<unknown>`. A file that is
+not a file in the checkout, or a line it does not have, falls back to
+the harness file. The fuzz job applies the same rules to the location
+it saves beside each failing input, against a second checkout that
+nothing installs into or runs, so a file the install generates never
+becomes the location a later replay names fixed. Each result carries
+the harness path, the exception type and the SHA-1 and SHA-256 of the
+failing input as properties. Every result but
+a harness error needs a handed-over input that reproduces it, or the
+publish job refuses the handover. The builder fingerprints each result
+itself, from its rule, file and message, rather than from the flagged
+line's text: an edit to the failing line keeps the alert open instead
+of closing it and opening another. A clean
+repository still gets an upload with no results, so "fuzzed and clean"
+differs from "not fuzzed".
+
+When a **scheduled** run fails or a maintainer cancels it, the
+workflow posts a Slack alert as the aislop publisher does.
+
+#### Fuzz publisher token and variables
+
+The publish jobs and harness discovery need a PAT in the
+**`FUZZ_SARIF_PAT`** repository secret, apart from the other
+publishers' credentials. It must be a repository secret, not a
+`production` environment secret: the workflow passes it to reusable
+workflows at the caller level, which cannot read an environment
+secret. A fine-grained PAT scoped to the organisation
+needs Code scanning alerts **read and write**, Contents read and
+Metadata read. Unlike the other publishers, a dispatch input cannot
+override it: every job of the run, the fuzz jobs that execute
+repository code included, can read the dispatch event and its inputs.
+The **`FUZZ_SCAN_INCLUDE`** / **`FUZZ_SCAN_EXCLUDE`**
+variables extend the [repository scope policy](#repository-scope-policy)
+as the other publishers' variables do.
+
+The publish jobs also need the **`FUZZ_EVIDENCE_KEY`** repository
+secret, passed at the caller level like the PAT: at least 32 random
+characters, for example the output of `openssl rand -hex 32`. The
+publish jobs alone receive it; they sign with it which input reproduced each
+published result (see [Saved fuzz state](#saved-fuzz-state)). Without
+it every publish job fails. Rotating it invalidates every binding, so
+until each repository's next processed upload a run that needs to close
+a fixed alert uploads nothing for it, and its publish job fails.
+
+#### Fuzz publisher manual dispatch
+
+**Run workflow** takes the zizmor publisher's `org` and `repo` inputs
+(see [Manual dispatch inputs](#manual-dispatch-inputs)), with no
+`token` input, and two more:
+
+- **`fuzz_seconds`** — seconds to fuzz each harness, 300 by default,
+  shared out as above.
+- **`dry_run`** — upload nothing and save no state; the run attaches
+  each repository's SARIF as an artifact instead. Dispatch one on a
+  repository before its first scheduled run.
+
+#### Saved fuzz state
+
+The fuzz job keeps each repository's state in the Actions cache of
+this repository, under a key naming the organisation, the repository
+and the run, restored by the newest key for that repository. Per
+harness it holds the corpus and at most 20 saved failing inputs of at
+most 1 MiB each. Its limits:
+
+- **It can disappear.** GitHub evicts cache entries unused for seven
+  days, and evicts the oldest when the repository passes its cache
+  quota. A repository that loses its state loses the inputs that kept
+  its alerts open. Beside each saved input the state records each way
+  it has failed. While the repository has an open `fuzz` alert that the
+  run neither reports nor shows fixed by a passing replay, the
+  publisher uploads nothing for it and fails its publish job, after
+  writing the summary, rather than close that alert without evidence;
+  on a scheduled run the Slack alert then reports it. This covers a
+  lost state, a restore of a state older than the last one published,
+  and saved inputs a run discards. A harness-error alert needs no
+  input and closes once its harness runs, unless the run restored no
+  state. When a run
+  reproduces such an alert and saves its input, the run whose replay
+  of that input passes may close it. A maintainer who accepts the loss
+  closes or dismisses those alerts by hand.
+- **A passing input waits for publication.** A saved input whose replay
+  passes stays in the state, and counts against the 20, until code
+  scanning has processed an upload that left its alerts out. The
+  publish job then saves a publication record under the key of the
+  state its run saved, and the next fuzz job, finding the record for
+  the state it restores, drops those inputs. Until then each run
+  replays them and names their alerts fixed again, so a failed upload,
+  or one the evidence check withholds, loses no evidence.
+- **The fuzz job checks each save.** The cache's save step succeeds
+  even when its upload fails, so the fuzz job then looks its key up
+  and fails when the cache lacks it; the publisher uploads nothing for
+  that run.
+- **Nobody can trust it.** The fuzz job that writes it runs the
+  repository's code, and holds the run's Actions runtime token, which
+  can write any cache entry of this repository. So each fuzz job
+  bounds what it restores (100 000 files, 1 GiB), drops anything but
+  plain files and directories, and drops the state of any harness it
+  will not run. No job but a fuzz job, which holds nothing, reads it.
+- **No job that runs anything extracts it.** The cache action extracts
+  an archive wherever its member paths point, outside the path it
+  restores too, so a forged archive could replace the fuzz tools, a
+  harness or an action and fake a passing replay. A separate restore
+  job, which holds nothing and runs no script, restores the state and
+  the evidence binding and hands them on as an artifact. The fuzz job
+  downloads that artifact by the ID the restore job reported, into a
+  directory of its own, and reads it as data; every other cache
+  restore step is a lookup.
+- **A fixed claim needs a signed binding.** Any fuzz job of the run,
+  whatever repository it fuzzes, can write another repository's state,
+  and so could pair a harmless input with that repository's alert.
+  After code scanning processes an upload, the publish job signs, under
+  `FUZZ_EVIDENCE_KEY`, a binding of the repository, the upload's SARIF
+  ID and each reported result's rule, path and message with the
+  SHA-256 of its input, and saves it in the cache. It never binds the
+  SHA-1 libFuzzer names inputs by, since a chosen SHA-1 collision could
+  swap a passing input for the bound one. The next run's restore job
+  restores the binding and its fuzz job hands it over unread; the
+  publish job, which restores no cache, rejects it unless the
+  signature matches and the SARIF ID is
+  the repository's latest `fuzz` analysis. A passing replay shows an
+  alert fixed when its input is the one the binding ties to that
+  alert, and not otherwise. A forged, lost, evicted or stale binding
+  proves nothing, so the evidence check withholds the upload, as for a
+  lost state. A failing replay also reports each earlier way its input
+  failed, which the state alone records; the binding ties such an alert
+  to that input when the previous binding already did, and not
+  otherwise, so a poisoned state cannot attach an alert to an input
+  that fails another way.
+- **It follows the harness path.** Renaming or moving a harness starts
+  its state afresh, and the alerts its old saved inputs held block
+  uploads as above.
+- **A dry run saves nothing**, so it neither advances nor spoils the
+  state the next scheduled run restores.
+
+#### Harness contract, version 1 (Python)
+
+<!-- This contract quotes issue #373 word for word, as harness issues
+across the organisation quote it. The empty comments stop write-good
+flagging two phrases and do not render. -->
+
+1. **Discovery.** A harness is a tracked `.py` file with a line containing
+   `import atheris`. OpenSSF Scorecard and the central job both find harnesses
+   by that text, so it appears in harness files and in no other `.py` file,
+   comments and strings included.
+2. **Invocation.** The central job runs a harness from the repository root, on
+   Linux x86_64 with CPython 3.13:
+   - `python <harness> [libFuzzer options] [directory ...]` fuzzes. libFuzzer
+     writes the inputs it keeps to the first directory.
+   - `python <harness> [libFuzzer options] <file> [<file> ...]` runs each named
+     input once and exits.
+
+   The harness puts whatever it imports on `sys.path` itself.
+3. **Seeds.** Unless an argument names an existing file, the harness appends a
+   directory holding its seed inputs after any directories it
+   <!-- -->was <!-- -->given. Run with no arguments, it fuzzes from its seeds.
+4. **Verdict.** An input that breaks the contract under test raises out of the
+   fuzzed function, and the process exits non-zero. A run in which every input
+   held exits 0. The verdict depends on the input alone: no clock, randomness,
+   network, credential or environment variable, and no file outside a temporary
+   directory.
+5. **Limits.** Each input finishes within 10 seconds and 2 GiB of memory.
+   libFuzzer sizes the inputs it generates from the largest seed, so a target
+   that needs long inputs carries a seed that long.
+6. **Imports.** The standard library, the repository's own code, the packages
+   `uv sync --frozen` installs from the repository's `uv.lock`, and `atheris`. A
+   repository without `uv.lock` gets the first two and `atheris`.
+7. **Without Atheris.** `import atheris` sits inside the function that starts
+   fuzzing, so the module imports on any platform. The check
+   being <!-- -->fuzzed is a plain function, and the repository's unit suite
+   runs every seed through it.
+8. **Nothing else.** The repository carries no fuzz workflow, no Atheris pin and
+   no Dependabot entry for one. The central job brings its own pinned Atheris.
+
+The central job's Atheris pin lives, hash-pinned and bumped by
+Dependabot, in
+[`.github/fuzz/requirements.txt`](.github/fuzz/requirements.txt).
+
 ### SARIF alert fingerprints
 
-Both publishers upload through the code-scanning REST API, which, unlike
+The publishers upload through the code-scanning REST API, which, unlike
 `github/codeql-action/upload-sarif`, computes no `partialFingerprints`.
 Without one, code scanning matches an alert by file and line alone, so
 an edit that moves a finding closes its alert, dismissal included, and
@@ -712,8 +983,8 @@ with no readable line hashes its subject without the line text. Line
 numbers never enter the hash, so an alert and its triage follow the
 finding when lines above it change. Editing the flagged line itself,
 or a scanner rewording a message beyond its numerals, yields a new
-alert. Fingerprints a scanner emits stay untouched, and the upload
-fails if any result lacks the new key.
+alert. Fingerprints a scanner emits stay untouched, as the fuzz
+builder's do, and the upload fails if any result lacks the new key.
 
 Alerts uploaded before fingerprinting carry none, so the first upload
 with fingerprints may close them and open fresh ones once; redo those
@@ -722,8 +993,8 @@ way, so treat that like a category change.
 
 ### Repository scope policy
 
-The `zizmor-sarif-publish.yaml` and `aislop-sarif-publish.yaml`
-workflows read their scope (through the shared
+The `zizmor-sarif-publish.yaml`, `aislop-sarif-publish.yaml` and
+`fuzz-sarif-publish.yaml` workflows read their scope (through the shared
 [`repo-discovery.yaml`](.github/workflows/repo-discovery.yaml)
 reusable workflow) from
 [`.github/scan-scope.json`](.github/scan-scope.json), keyed
@@ -788,8 +1059,10 @@ newlines):
 - **`ZIZMOR_SCAN_EXCLUDE`** — extra `exclude` patterns.
 
 The `aislop-sarif-publish.yaml` workflow honours the analogous
-**`AISLOP_SCAN_INCLUDE`** / **`AISLOP_SCAN_EXCLUDE`** variables, so the
-two scanners can diverge at run time without editing the shared JSON.
+**`AISLOP_SCAN_INCLUDE`** / **`AISLOP_SCAN_EXCLUDE`** variables, and
+`fuzz-sarif-publish.yaml` the **`FUZZ_SCAN_INCLUDE`** /
+**`FUZZ_SCAN_EXCLUDE`** variables, so the scanners can diverge at run
+time without editing the shared JSON.
 
 The workflow merges the variable patterns with the organisation's JSON
 lists before matching.
