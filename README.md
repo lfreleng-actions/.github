@@ -357,8 +357,9 @@ release. [Dependabot](.github/dependabot.yml) in this repository then
 bumps the pinned action ref under its `github-actions` ecosystem
 (`CI(actions): Bump lfreleng-actions/zizmor-scan-action ...`). After
 that PR merges, every audited repository picks up the new version on
-its next run. A 7-day cooldown blocks churn on releases that upstream
-retracts or supersedes within days.
+its next run. The `github-actions` entry exempts `lfreleng-actions/*`
+from its 7-day cooldown, so Dependabot proposes a new release of that
+action on its next weekly run.
 
 To upgrade manually, bump the pinned action ref in
 [`.github/workflows/zizmor.yaml`](.github/workflows/zizmor.yaml) and
