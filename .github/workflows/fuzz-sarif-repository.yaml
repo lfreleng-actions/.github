@@ -1,0 +1,861 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Fuzz one repository and publish what fails; called once per
+# repository by fuzz-sarif-publish.yaml, whose header explains the
+# design.
+#
+# The fuzz and publish jobs sit either side of a trust boundary:
+#
+# - 'fuzz' executes the repository and everything it installs. It
+#   references no secret, uses no environment and holds contents: read
+#   alone. It replays saved failing inputs, fuzzes, and hands its logs
+#   and failing inputs over as one artifact. A harness finding a
+#   failure is data: this job fails only when it could not do its work.
+# - 'publish' holds the upload token. It takes the artifact by the ID
+#   its own fuzz job reported, never by name or pattern, since any fuzz
+#   job in the run can upload under any name. It treats that artifact
+#   as hostile data: it executes, imports and sources nothing from it
+#   or from the target checkout, and refuses (uploading nothing, and
+#   failing) a handover that is missing, incomplete or malformed.
+#
+# The fuzz job confirms the cache holds the state it saved, and fails
+# otherwise, so no result is published whose input the next run cannot
+# replay. The publish job uploads nothing while an open alert goes
+# unreported, unless a saved input that failed as that alert now
+# passes, so lost or stale state cannot close alerts it never replayed.
+# A saved input that passes stays in the state, and names its alerts
+# fixed on each run, until the next fuzz job finds the publication
+# record the publish job saves once code scanning processes an upload:
+# a failed or withheld upload cannot lose the evidence that would let
+# those alerts close.
+#
+# The fuzz job holds the run's Actions runtime token, so it can also
+# write any Actions cache entry of this repository. The saved state is
+# therefore bounded and pruned before use (fuzz_publish.py fuzz), and
+# only ever read by restore and fuzz jobs, which hold nothing. A
+# forged publication record only drops passing inputs, whose alerts
+# the evidence check then keeps open. A forged state could pair a
+# harmless input with an alert of another repository, so a passing
+# replay proves an alert fixed only with the input the publish job
+# bound to that alert, in a binding it signs with FUZZ_EVIDENCE_KEY
+# after each processed upload (fuzz_evidence.py). The restore job
+# restores that binding and the fuzz job hands it over; the publish
+# job, which restores no cache, checks it as data.
+#
+# A cache archive is a tar the cache action extracts wherever its
+# member paths point, not only under the path it restores, so a forged
+# one could replace the fuzz tools, a harness, the interpreter or the
+# code of a later action and fake a passing replay. 'restore' therefore
+# restores both archives in a job of its own, which holds nothing and
+# runs nothing of this workflow after them, and hands the result on as
+# an artifact. The fuzz job takes that artifact by the ID in the
+# restore job's outputs, as hostile data in a directory of its own, and
+# extracts no cache itself.
+
+name: 'Fuzz SARIF Repository 🐒'
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_call:
+    inputs:
+      org:
+        description: 'Organisation the repository belongs to'
+        required: true
+        type: 'string'
+      repo:
+        description: 'Repository to fuzz (name only)'
+        required: true
+        type: 'string'
+      default_branch:
+        description: 'Default branch the results are published against'
+        required: true
+        type: 'string'
+      commit:
+        description: 'Default-branch commit discovery recorded'
+        required: true
+        type: 'string'
+      harnesses:
+        description: 'JSON array of the harness paths discovery found'
+        required: true
+        type: 'string'
+      fuzz_seconds:
+        description: 'Seconds to fuzz each harness before sharing out'
+        required: false
+        type: 'number'
+        default: 300
+      dry_run:
+        description: 'Upload nothing and save no state'
+        required: false
+        type: 'boolean'
+        default: false
+    secrets:
+      token:
+        description: 'Token able to upload SARIF to the repository'
+        required: true
+      evidence_key:
+        description: 'Key that signs which input reproduced each result'
+        required: true
+
+permissions: {}
+
+env:
+  GH_TELEMETRY: 'false'
+
+jobs:
+  restore:
+    name: 'Restore saved state'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: '${{ steps.upload.outputs.artifact-id }}'
+      matched-key: '${{ steps.state.outputs.cache-matched-key }}'
+    steps:
+      # Load the egress allow-list out-of-band from lfreleng-actions/.github
+      # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
+        with:
+          config: '@dfa09089d9d88230380539d2116810910347d378'  # v0.22.0
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c  # v2.23.0
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      # The key names the organisation, the repository and the run; the
+      # restore key drops the run, and its trailing '/' stops 'foo'
+      # restoring the state of 'foo-bar'. The path is part of the cache
+      # version, so it is the path the fuzz job saves.
+      - name: 'Restore saved fuzz state'
+        id: 'state'
+        # yamllint disable-line rule:line-length
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: '${{ runner.temp }}/fuzz-state'
+          # yamllint disable-line rule:line-length
+          key: 'fuzz-state/${{ inputs.org }}/${{ inputs.repo }}/${{ github.run_id }}-${{ github.run_attempt }}'
+          restore-keys: |
+            fuzz-state/${{ inputs.org }}/${{ inputs.repo }}/
+
+      # The publish job signs this after each upload code scanning
+      # processes; the newest for the repository is the one for its
+      # latest analysis, unless forged, which the publish job detects.
+      - name: 'Restore the evidence binding'
+        # yamllint disable-line rule:line-length
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: '${{ runner.temp }}/fuzz-evidence'
+          # yamllint disable-line rule:line-length
+          key: 'fuzz-evidence/${{ inputs.org }}/${{ inputs.repo }}/${{ github.run_id }}-${{ github.run_attempt }}'
+          restore-keys: |
+            fuzz-evidence/${{ inputs.org }}/${{ inputs.repo }}/
+
+      # Nothing restored uploads nothing, and the fuzz job starts afresh.
+      # The 'fuzz-restored-' prefix keeps a repository whose name starts
+      # with a dot from producing a hidden artifact name.
+      - name: 'Hand over the restored state'
+        id: 'upload'
+        # yamllint disable-line rule:line-length
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: 'fuzz-restored-${{ inputs.repo }}-${{ github.run_attempt }}'
+          path: |
+            ${{ runner.temp }}/fuzz-state/
+            ${{ runner.temp }}/fuzz-evidence/
+          if-no-files-found: 'ignore'
+          retention-days: 1
+
+  fuzz:
+    name: 'Fuzz'
+    needs: 'restore'
+    runs-on: 'ubuntu-latest'
+    # 45 minutes of fuzzing at most, plus installs, replays and merges.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: '${{ steps.upload.outputs.artifact-id }}'
+      state-key: '${{ steps.restore.outputs.state-key }}'
+    steps:
+      # Load the egress allow-list out-of-band from lfreleng-actions/.github
+      # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
+        with:
+          config: '@dfa09089d9d88230380539d2116810910347d378'  # v0.22.0
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c  # v2.23.0
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Checkout repository to fuzz'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: '${{ inputs.org }}/${{ inputs.repo }}'
+          ref: '${{ inputs.commit }}'
+          path: 'target'
+          persist-credentials: false
+
+      # Data only, never installed or run: the fuzz side checks failure
+      # locations against it as the publish job checks them against its
+      # own checkout, so a file the install generates in 'target' never
+      # becomes the location saved as an input's evidence.
+      - name: 'Checkout fuzzed repository (data only)'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: '${{ inputs.org }}/${{ inputs.repo }}'
+          ref: '${{ inputs.commit }}'
+          path: 'source'
+          persist-credentials: false
+
+      - name: 'Checkout fuzz tools'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: '.fuzz-tools'
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts/fuzz_common.py
+            .github/scripts/fuzz_evidence.py
+            .github/scripts/fuzz_publish.py
+            .github/scripts/fuzz_record.py
+            .github/scripts/fuzz_runner.py
+            .github/scripts/fuzz_sarif.py
+            .github/scripts/fuzz_state.py
+            .github/fuzz/requirements.txt
+          sparse-checkout-cone-mode: false
+
+      # The harness contract names CPython 3.13. update-environment
+      # 'false' leaves PATH untouched; the steps below name the
+      # interpreter they mean.
+      - name: 'Set up Python'
+        id: 'setup-python'
+        # yamllint disable-line rule:line-length
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.13'
+          update-environment: 'false'
+
+      # No cache: this job runs untrusted code, and a cache it saved
+      # would be restored by trusted jobs elsewhere.
+      - name: 'Install uv'
+        # yamllint disable-line rule:line-length
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: false
+
+      - name: 'Install the repository and Atheris'
+        id: 'venv'
+        shell: bash
+        working-directory: 'target'
+        env:
+          PYTHON: '${{ steps.setup-python.outputs.python-path }}'
+          UV_PROJECT_ENVIRONMENT: '${{ runner.temp }}/fuzz-venv'
+          UV_PYTHON_DOWNLOADS: 'never'
+          REQUIREMENTS: '../.fuzz-tools/.github/fuzz/requirements.txt'
+        run: |
+          # Install the repository and Atheris
+          set -euo pipefail
+          if [ -f uv.lock ]; then
+            uv sync --frozen --python "${PYTHON}"
+          else
+            uv venv --python "${PYTHON}" "${UV_PROJECT_ENVIRONMENT}"
+          fi
+          uv pip install --python "${UV_PROJECT_ENVIRONMENT}/bin/python" \
+            --require-hashes --only-binary=:all: -r "${REQUIREMENTS}"
+          echo "python=${UV_PROJECT_ENVIRONMENT}/bin/python" >> "$GITHUB_OUTPUT"
+
+      # The restore job's outputs are as hostile as its artifact: take
+      # only an artifact ID, and only a key this repository's state
+      # could have been saved under, or treat nothing as restored. The
+      # key this run saves under is derived here, not taken from there.
+      - name: 'Check the restored state'
+        id: 'restore'
+        shell: bash
+        env:
+          ARTIFACT_ID: '${{ needs.restore.outputs.artifact-id }}'
+          MATCHED_KEY: '${{ needs.restore.outputs.matched-key }}'
+          PREFIX: 'fuzz-state/${{ inputs.org }}/${{ inputs.repo }}/'
+          RUN: '${{ github.run_id }}-${{ github.run_attempt }}'
+        run: |
+          # Check the restored state
+          set -euo pipefail
+          echo "state-key=${PREFIX}${RUN}" >> "$GITHUB_OUTPUT"
+          if [[ "${ARTIFACT_ID}" =~ ^[0-9]+$ ]]; then
+            echo "artifact-id=${ARTIFACT_ID}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${ARTIFACT_ID}" ]; then
+            echo "::warning::ignoring an unexpected restore artifact ID"
+          fi
+          suffix="${MATCHED_KEY#"${PREFIX}"}"
+          if [[ "${MATCHED_KEY}" == "${PREFIX}"* ]] \
+             && [[ "${suffix}" =~ ^[0-9]+-[0-9]+$ ]]; then
+            echo "matched-key=${MATCHED_KEY}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${MATCHED_KEY}" ]; then
+            echo "::warning::ignoring an unexpected restored state key"
+          fi
+
+      # The download writes inside its path alone; the fuzz side then
+      # bounds and prunes the state, and hands the binding over unread.
+      # The artifact's root holds fuzz-state/ and fuzz-evidence/, and
+      # merge-multiple extracts it there with no artifact-name directory
+      # whatever the count of artifacts the IDs match.
+      - name: 'Download the restored state'
+        if: steps.restore.outputs.artifact-id != ''
+        # yamllint disable-line rule:line-length
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          artifact-ids: '${{ steps.restore.outputs.artifact-id }}'
+          path: '${{ runner.temp }}/fuzz-restored'
+          merge-multiple: true
+
+      # The save step saves this path, which is part of the cache
+      # version, so the state moves there; anything but a directory
+      # stays behind.
+      - name: 'Take the restored state'
+        if: steps.restore.outputs.artifact-id != ''
+        shell: bash
+        run: |
+          # Take the restored state
+          set -euo pipefail
+          restored="${RUNNER_TEMP}/fuzz-restored/fuzz-state"
+          if [ -d "${restored}" ] && [ ! -L "${restored}" ] \
+             && [ ! -e "${RUNNER_TEMP}/fuzz-state" ]; then
+            mv "${restored}" "${RUNNER_TEMP}/fuzz-state"
+          fi
+
+      # The publish job saves this record once code scanning processes
+      # the upload of the run that saved the restored state. Its key
+      # starts 'fuzz-published/', so the state's restore key never
+      # matches it. A lookup extracts nothing.
+      - name: 'Look up the publication of the restored state'
+        id: 'published'
+        if: steps.restore.outputs.matched-key != ''
+        # yamllint disable-line rule:line-length
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: '${{ runner.temp }}/fuzz-published'
+          # yamllint disable-line rule:line-length
+          key: "${{ format('fuzz-published/{0}', steps.restore.outputs.matched-key) }}"
+          lookup-only: true
+
+      # The script runs under setup-python's interpreter, not the one
+      # the repository's packages are installed into, so no .pth file
+      # from them runs inside it.
+      - name: 'Replay and fuzz the harnesses'
+        shell: bash
+        env:
+          PYTHON: '${{ steps.setup-python.outputs.python-path }}'
+          FUZZ_PYTHON: '${{ steps.venv.outputs.python }}'
+          SCRIPT: '.fuzz-tools/.github/scripts/fuzz_publish.py'
+          HARNESSES: '${{ inputs.harnesses }}'
+          COMMIT: '${{ inputs.commit }}'
+          FUZZ_SECONDS: '${{ inputs.fuzz_seconds }}'
+          RESTORED_KEY: '${{ steps.restore.outputs.matched-key }}'
+          PUBLISHED: "${{ steps.published.outputs.cache-hit == 'true' }}"
+        run: |
+          # Replay and fuzz the harnesses
+          set -euo pipefail
+          "${PYTHON}" -I "${SCRIPT}" fuzz \
+            "--root=${GITHUB_WORKSPACE}/target" \
+            "--source-root=${GITHUB_WORKSPACE}/source" \
+            "--python=${FUZZ_PYTHON}" \
+            "--harnesses=${HARNESSES}" \
+            "--state=${RUNNER_TEMP}/fuzz-state" \
+            "--output=${RUNNER_TEMP}/fuzz-handover" \
+            "--commit=${COMMIT}" \
+            "--fuzz-seconds=${FUZZ_SECONDS}" \
+            "--restored-key=${RESTORED_KEY}" \
+            "--published=${PUBLISHED}" \
+            "--binding=${RUNNER_TEMP}/fuzz-restored/fuzz-evidence/binding.json"
+
+      # The 'fuzz-handover-' prefix keeps a repository whose name starts
+      # with a dot from producing a hidden artifact name; the run
+      # attempt keeps a re-run from colliding with the first attempt.
+      - name: 'Hand over logs and failing inputs'
+        id: 'upload'
+        # yamllint disable-line rule:line-length
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: 'fuzz-handover-${{ inputs.repo }}-${{ github.run_attempt }}'
+          path: '${{ runner.temp }}/fuzz-handover/'
+          if-no-files-found: 'error'
+          retention-days: 7
+
+      - name: 'Save fuzz state'
+        if: ${{ !inputs.dry_run }}
+        # yamllint disable-line rule:line-length
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: '${{ runner.temp }}/fuzz-state'
+          key: '${{ steps.restore.outputs.state-key }}'
+
+      # The save step warns and succeeds when its upload fails. Look the
+      # exact key up, and fail when the cache lacks it, so the publish
+      # job never runs for a snapshot the next run cannot restore.
+      - name: 'Verify the saved fuzz state'
+        if: ${{ !inputs.dry_run }}
+        # yamllint disable-line rule:line-length
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: '${{ runner.temp }}/fuzz-state'
+          key: '${{ steps.restore.outputs.state-key }}'
+          lookup-only: true
+          fail-on-cache-miss: true
+
+  publish:
+    name: 'Publish'
+    needs: 'fuzz'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 15
+    # Run this job in a dedicated environment so its execution and any
+    # environment-scoped secrets can be gated by environment protection
+    # rules (satisfies zizmor's secrets-outside-env).
+    environment: 'production'
+    permissions:
+      contents: read
+    steps:
+      # Load the egress allow-list out-of-band from lfreleng-actions/.github
+      # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
+        with:
+          config: '@dfa09089d9d88230380539d2116810910347d378'  # v0.22.0
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c  # v2.23.0
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      # Data only: the builder checks file and line references against
+      # it, and the fingerprint script reads line text from it.
+      - name: 'Checkout fuzzed repository (data only)'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: '${{ inputs.org }}/${{ inputs.repo }}'
+          ref: '${{ inputs.commit }}'
+          path: 'target'
+          persist-credentials: false
+
+      - name: 'Checkout SARIF tools'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: '.fuzz-tools'
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts/fuzz_common.py
+            .github/scripts/fuzz_evidence.py
+            .github/scripts/fuzz_publish.py
+            .github/scripts/fuzz_record.py
+            .github/scripts/fuzz_runner.py
+            .github/scripts/fuzz_sarif.py
+            .github/scripts/fuzz_state.py
+            .github/scripts/sarif_fingerprint.py
+          sparse-checkout-cone-mode: false
+
+      # An empty artifact-ids input downloads every artifact of the run,
+      # so refuse anything but the one numeric ID the fuzz job reported.
+      - name: 'Check the handover artifact ID'
+        shell: bash
+        env:
+          ARTIFACT_ID: '${{ needs.fuzz.outputs.artifact-id }}'
+        run: |
+          # Check the handover artifact ID
+          set -euo pipefail
+          if [[ ! "${ARTIFACT_ID}" =~ ^[0-9]+$ ]]; then
+            echo "::error::the fuzz job reported no handover artifact" >&2
+            exit 1
+          fi
+
+      - name: 'Download the handover'
+        # yamllint disable-line rule:line-length
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          artifact-ids: '${{ needs.fuzz.outputs.artifact-id }}'
+          path: '${{ runner.temp }}/fuzz-handover'
+          merge-multiple: true
+
+      # Resolve the interpreter here rather than take whatever python3
+      # PATH names; update-environment 'false' leaves PATH untouched.
+      - name: 'Set up Python'
+        id: 'setup-python'
+        # yamllint disable-line rule:line-length
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '>=3.11'
+          update-environment: 'false'
+
+      # -I keeps the interpreter from importing anything from the
+      # environment or the working directory; the script imports only
+      # its sibling modules in .fuzz-tools, reads the handover and the
+      # checkout as data, and executes nothing from either.
+      - name: 'Build SARIF from the handover'
+        id: 'build'
+        shell: bash
+        env:
+          PYTHON: '${{ steps.setup-python.outputs.python-path }}'
+          SCRIPT: '.fuzz-tools/.github/scripts/fuzz_publish.py'
+          HARNESSES: '${{ inputs.harnesses }}'
+          COMMIT: '${{ inputs.commit }}'
+        run: |
+          # Build SARIF from the handover
+          set -euo pipefail
+          "${PYTHON}" -I "${SCRIPT}" sarif \
+            "--handover=${RUNNER_TEMP}/fuzz-handover" \
+            "--source-root=${GITHUB_WORKSPACE}/target" \
+            "--commit=${COMMIT}" \
+            "--harnesses=${HARNESSES}" \
+            "--output=${RUNNER_TEMP}/fuzz.sarif" \
+            "--summary=${RUNNER_TEMP}/fuzz-summary.json"
+
+      - name: 'Fingerprint SARIF results'
+        id: 'fingerprint'
+        shell: bash
+        env:
+          PYTHON: '${{ steps.setup-python.outputs.python-path }}'
+          SCRIPT: '.fuzz-tools/.github/scripts/sarif_fingerprint.py'
+        run: |
+          # Fingerprint SARIF results
+          set -euo pipefail
+          output="${RUNNER_TEMP}/fingerprinted.sarif"
+          "${PYTHON}" -I "${SCRIPT}" \
+            "--input=${RUNNER_TEMP}/fuzz.sarif" \
+            "--output=${output}" \
+            "--source-root=${GITHUB_WORKSPACE}/target"
+          echo "sarif-file=${output}" >> "$GITHUB_OUTPUT"
+
+      # Stamp the 'fuzz/' category and apply both upload guards from
+      # the aislop publisher; see aislop-sarif-publish.yaml.
+      - name: 'Stamp and check SARIF'
+        id: 'stamp'
+        shell: bash
+        env:
+          REPO: '${{ inputs.repo }}'
+          SARIF_FILE: '${{ steps.fingerprint.outputs.sarif-file }}'
+        run: |
+          # Stamp and check SARIF
+          set -euo pipefail
+          stamped="${RUNNER_TEMP}/fuzz-sarif/fuzz-${REPO}.sarif"
+          mkdir -p "${RUNNER_TEMP}/fuzz-sarif"
+          jq '.runs[].automationDetails.id = "fuzz/"' \
+            "${SARIF_FILE}" > "${stamped}"
+          if ! jq -e '(.runs | type == "array" and length > 0)
+                      and all(.runs[]; .automationDetails.id == "fuzz/")' \
+               "${stamped}" > /dev/null; then
+            echo "::error::SARIF category stamp failed for ${REPO}" >&2
+            exit 1
+          fi
+          if ! jq -e 'all(.runs[].results[]?;
+                          .partialFingerprints["lfrelengContentHash/v1"]
+                          | type == "string" and length > 0)' \
+               "${stamped}" > /dev/null; then
+            echo "::error::SARIF fingerprinting failed for ${REPO}" >&2
+            exit 1
+          fi
+          echo "sarif-file=${stamped}" >> "$GITHUB_OUTPUT"
+
+      # Every open alert but a harness error came from a saved input,
+      # which each run replays and reports until it passes. An open
+      # alert this run neither reports nor shows fixed has lost its
+      # input: to a cache eviction, a restore older than the last
+      # published state, or a harness's discarded inputs. An upload
+      # would close it without a replay, so upload nothing, and fail the
+      # job, until the run reproduces it or a maintainer closes or
+      # dismisses it. A harness-error alert needs no input, and closes
+      # once its harness runs, unless no state was restored. The builder
+      # fingerprints each result from its rule, file and message, so an
+      # alert this check sees reported is the alert the upload keeps
+      # open; the summary holds each path decoded, as the alerts API
+      # reports it.
+      # A passing replay shows an alert fixed only with the input the
+      # handed-over binding, signed for the latest fuzz analysis, ties
+      # to it; see fuzz_evidence.py. Code scanning answers 404 for a
+      # repository with no analysis yet, which has no open alerts either.
+      - name: 'Check for evidence before closing alerts'
+        id: 'evidence'
+        shell: bash
+        env:
+          GH_TOKEN: '${{ secrets.token }}'
+          FUZZ_EVIDENCE_KEY: '${{ secrets.evidence_key }}'
+          ORG: '${{ inputs.org }}'
+          REPO: '${{ inputs.repo }}'
+          DEFAULT_BRANCH: '${{ inputs.default_branch }}'
+          PYTHON: '${{ steps.setup-python.outputs.python-path }}'
+          SCRIPT: '.fuzz-tools/.github/scripts/fuzz_publish.py'
+        run: |
+          # Check for evidence before closing alerts
+          set -euo pipefail
+          errors="$(mktemp)"
+          alerts="$(mktemp)"
+          latest="$(mktemp)"
+          count="$(mktemp)"
+          trap 'rm -f "${errors}" "${alerts}" "${latest}" "${count}"' EXIT
+          query='tool_name=fuzz&state=open&per_page=100'
+          if gh api --paginate \
+               "/repos/${ORG}/${REPO}/code-scanning/alerts?${query}" \
+               --jq '.[] | {rule: .rule.id,
+                            path: .most_recent_instance.location.path,
+                            message: .most_recent_instance.message.text}' \
+               > "${alerts}" 2> "${errors}"; then
+            :
+          elif grep -q 'HTTP 404' "${errors}"; then
+            : > "${alerts}"
+          else
+            cat "${errors}" >&2
+            echo "::error::cannot read open fuzz alerts for ${REPO}" >&2
+            exit 1
+          fi
+          # Newest first: the analysis whose results the alerts reflect.
+          if gh api --method GET \
+               "/repos/${ORG}/${REPO}/code-scanning/analyses" \
+               -f tool_name=fuzz -f "ref=refs/heads/${DEFAULT_BRANCH}" \
+               -f per_page=1 --jq '.[0].sarif_id // ""' \
+               > "${latest}" 2> "${errors}"; then
+            :
+          elif grep -q 'HTTP 404' "${errors}"; then
+            : > "${latest}"
+          else
+            cat "${errors}" >&2
+            echo "::error::cannot read the latest fuzz analysis of ${REPO}" >&2
+            exit 1
+          fi
+          previous="$(cat "${latest}")"
+          if ! [[ "${previous}" =~ ^[0-9A-Za-z-]{0,100}$ ]]; then
+            echo "::error::unexpected fuzz analysis SARIF ID for ${REPO}" >&2
+            exit 1
+          fi
+          # The bind step verifies the handed-over binding against it.
+          echo "previous-sarif-id=${previous}" >> "$GITHUB_OUTPUT"
+          "${PYTHON}" -I "${SCRIPT}" evidence \
+            "--summary=${RUNNER_TEMP}/fuzz-summary.json" \
+            "--alerts=${alerts}" \
+            "--handover=${RUNNER_TEMP}/fuzz-handover" \
+            "--repository=${ORG}/${REPO}" \
+            "--sarif-id=${previous}" > "${count}"
+          unproven="$(cat "${count}")"
+          if [ "${unproven}" != '0' ]; then
+            echo "::warning::${ORG}/${REPO}: ${unproven} open fuzz" \
+                 "alert(s) have no evidence that would close them" \
+                 "and this run does not report them; uploading nothing"
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'skip=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 'Attach SARIF to the run (dry run)'
+        if: ${{ inputs.dry_run }}
+        # yamllint disable-line rule:line-length
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: 'fuzz-sarif-${{ inputs.repo }}-${{ github.run_attempt }}'
+          path: '${{ steps.stamp.outputs.sarif-file }}'
+          if-no-files-found: 'error'
+          retention-days: 7
+
+      - name: 'Publish SARIF to code scanning'
+        id: 'publish'
+        if: ${{ !inputs.dry_run && steps.evidence.outputs.skip != 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: '${{ secrets.token }}'
+          ORG: '${{ inputs.org }}'
+          REPO: '${{ inputs.repo }}'
+          DEFAULT_BRANCH: '${{ inputs.default_branch }}'
+          SARIF_FILE: '${{ steps.stamp.outputs.sarif-file }}'
+          HEAD_SHA: '${{ inputs.commit }}'
+        run: |
+          # Publish SARIF to code scanning
+          set -euo pipefail
+          # Upload against the default-branch commit discovery recorded,
+          # gzip + base64 per the API, through a temp file and jq
+          # --rawfile so a large SARIF never lands on a command line.
+          payload_file="$(mktemp)"
+          trap 'rm -f "${payload_file}"' EXIT
+          gzip -c "${SARIF_FILE}" | base64 -w0 > "${payload_file}"
+          body="$(jq -n --arg sha "${HEAD_SHA}" \
+            --arg ref "refs/heads/${DEFAULT_BRANCH}" \
+            --rawfile sarif "${payload_file}" \
+            '{commit_sha: $sha, ref: $ref, sarif: $sarif}')"
+          resp=''
+          for attempt in 1 2 3; do
+            if resp="$(printf '%s' "${body}" | gh api --method POST \
+                 -H 'Accept: application/vnd.github+json' \
+                 "/repos/${ORG}/${REPO}/code-scanning/sarifs" --input -)"; then
+              break
+            fi
+            resp=''
+            echo "::warning::SARIF upload attempt ${attempt} failed for ${REPO}"
+            sleep 5
+          done
+          if [ -z "${resp}" ]; then
+            echo "::error::failed to publish SARIF for ${REPO} (3 tries)" >&2
+            exit 1
+          fi
+          sarif_id="$(printf '%s' "${resp}" | jq -r '.id // empty')"
+          if [ -z "${sarif_id}" ]; then
+            echo "Unexpected upload response: ${resp}" >&2
+            echo "::error::no SARIF id in upload response for ${REPO}" >&2
+            exit 1
+          fi
+          echo "Published fuzz SARIF for ${ORG}/${REPO} @ ${HEAD_SHA}"
+          # Wait for processing so silent SARIF rejections surface here.
+          for _ in $(seq 1 30); do
+            status="$(gh api \
+              "/repos/${ORG}/${REPO}/code-scanning/sarifs/${sarif_id}" \
+              --jq '.processing_status')" || status='pending'
+            case "${status}" in
+              complete)
+                echo "Code scanning processed the SARIF for ${REPO}"
+                echo "sarif-id=${sarif_id}" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+              failed)
+                gh api \
+                  "/repos/${ORG}/${REPO}/code-scanning/sarifs/${sarif_id}" \
+                  --jq '.errors // []' || true
+                echo "::error::code scanning rejected the SARIF for ${REPO}" >&2
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          echo "::error::SARIF processing timed out for ${REPO}" >&2
+          exit 1
+
+      # Sign which input reproduced each result this upload reported,
+      # for the next run's evidence check; the fuzz job restores it. A
+      # failure only the restored state records is signed only when the
+      # handed-over binding, for the analysis the evidence check read,
+      # already holds it.
+      - name: 'Bind the published results to their inputs'
+        if: ${{ !inputs.dry_run && steps.evidence.outputs.skip != 'true' }}
+        shell: bash
+        env:
+          FUZZ_EVIDENCE_KEY: '${{ secrets.evidence_key }}'
+          ORG: '${{ inputs.org }}'
+          REPO: '${{ inputs.repo }}'
+          SARIF_ID: '${{ steps.publish.outputs.sarif-id }}'
+          PREVIOUS_SARIF_ID: '${{ steps.evidence.outputs.previous-sarif-id }}'
+          PYTHON: '${{ steps.setup-python.outputs.python-path }}'
+          SCRIPT: '.fuzz-tools/.github/scripts/fuzz_publish.py'
+        run: |
+          # Bind the published results to their inputs
+          set -euo pipefail
+          "${PYTHON}" -I "${SCRIPT}" bind \
+            "--summary=${RUNNER_TEMP}/fuzz-summary.json" \
+            "--handover=${RUNNER_TEMP}/fuzz-handover" \
+            "--repository=${ORG}/${REPO}" \
+            "--sarif-id=${SARIF_ID}" \
+            "--previous-sarif-id=${PREVIOUS_SARIF_ID}" \
+            "--output=${RUNNER_TEMP}/fuzz-evidence/binding.json"
+
+      # The SARIF ID in the key keeps any other job from claiming it
+      # first; the fuzz job restores the newest key by prefix.
+      - name: 'Save the evidence binding'
+        if: ${{ !inputs.dry_run && steps.evidence.outputs.skip != 'true' }}
+        # yamllint disable-line rule:line-length
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: '${{ runner.temp }}/fuzz-evidence'
+          # yamllint disable-line rule:line-length
+          key: "${{ format('fuzz-evidence/{0}/{1}/{2}-{3}-{4}', inputs.org, inputs.repo, github.run_id, github.run_attempt, steps.publish.outputs.sarif-id) }}"
+
+      # A failed save only warns; without the binding, the next run
+      # could close no alert by a passing replay.
+      - name: 'Verify the saved evidence binding'
+        if: ${{ !inputs.dry_run && steps.evidence.outputs.skip != 'true' }}
+        # yamllint disable-line rule:line-length
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: '${{ runner.temp }}/fuzz-evidence'
+          # yamllint disable-line rule:line-length
+          key: "${{ format('fuzz-evidence/{0}/{1}/{2}-{3}-{4}', inputs.org, inputs.repo, github.run_id, github.run_attempt, steps.publish.outputs.sarif-id) }}"
+          lookup-only: true
+          fail-on-cache-miss: true
+
+      # Tell the next fuzz job that this run's state was published, so
+      # it may drop the passing inputs whose alerts this upload closed.
+      - name: 'Record the publication'
+        if: ${{ !inputs.dry_run && steps.evidence.outputs.skip != 'true' }}
+        shell: bash
+        env:
+          STATE_KEY: '${{ needs.fuzz.outputs.state-key }}'
+          COMMIT: '${{ inputs.commit }}'
+        run: |
+          # Record the publication
+          set -euo pipefail
+          if [[ "${STATE_KEY}" != fuzz-state/* ]]; then
+            echo "::error::the fuzz job reported no state key" >&2
+            exit 1
+          fi
+          mkdir -p "${RUNNER_TEMP}/fuzz-published"
+          printf '%s\n' "${COMMIT}" > "${RUNNER_TEMP}/fuzz-published/commit"
+
+      - name: 'Save the publication record'
+        if: ${{ !inputs.dry_run && steps.evidence.outputs.skip != 'true' }}
+        # yamllint disable-line rule:line-length
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: '${{ runner.temp }}/fuzz-published'
+          # yamllint disable-line rule:line-length
+          key: "${{ format('fuzz-published/{0}', needs.fuzz.outputs.state-key) }}"
+
+      - name: 'Summarise this repository'
+        if: always() && steps.build.outcome == 'success'
+        shell: bash
+        env:
+          ORG: '${{ inputs.org }}'
+          REPO: '${{ inputs.repo }}'
+          COMMIT: '${{ inputs.commit }}'
+          SKIPPED: '${{ steps.evidence.outputs.skip }}'
+          DRY_RUN: '${{ inputs.dry_run }}'
+        run: |
+          # Summarise this repository
+          set -euo pipefail
+          jq -r --arg name "${ORG}/${REPO}" --arg commit "${COMMIT}" \
+                --arg skipped "${SKIPPED:-false}" --arg dry "${DRY_RUN}" '
+            "## Fuzz results: `\($name)` @ `\($commit[0:12])`\n",
+            "| Harnesses | Inputs executed | Results | State restored |",
+            "| --- | --- | --- | --- |",
+            "| \(.harnesses) | \(.executed) | \(.results) | \(.restored) |",
+            "",
+            (.rules | to_entries[] | "- `\(.key)`: \(.value)"),
+            (if $dry == "true" then "\nDry run: nothing uploaded."
+             elif $skipped == "true"
+             then "\nNot uploaded: open alerts lost their saved inputs."
+             else empty end)' \
+            "${RUNNER_TEMP}/fuzz-summary.json" >> "$GITHUB_STEP_SUMMARY"
+
+      # A withheld upload is a publication that did not happen, so it
+      # fails the job, after the summary, and the scheduled run's Slack
+      # alert reports it; otherwise a lost state would withhold every
+      # later upload in silence. The fuzz job has already saved the
+      # state, so the pending inputs survive.
+      - name: 'Fail a withheld upload'
+        if: ${{ !inputs.dry_run && steps.evidence.outputs.skip == 'true' }}
+        shell: bash
+        env:
+          ORG: '${{ inputs.org }}'
+          REPO: '${{ inputs.repo }}'
+        run: |
+          # Fail a withheld upload
+          echo "::error::${ORG}/${REPO}: upload withheld; open fuzz" \
+               "alerts lost their saved inputs or binding" >&2
+          exit 1
