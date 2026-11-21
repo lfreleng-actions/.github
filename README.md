@@ -833,7 +833,9 @@ a fixed alert uploads nothing for it, and its publish job fails.
 `token` input, and two more:
 
 - **`fuzz_seconds`** — seconds to fuzz each harness, 300 by default,
-  shared out as above.
+  shared out as above. It must be a positive whole number; the
+  **Check dispatch inputs** job refuses any other value before any
+  repository job starts.
 - **`dry_run`** — upload nothing and save no state; the run attaches
   each repository's SARIF as an artifact instead. Dispatch one on a
   repository before its first scheduled run.

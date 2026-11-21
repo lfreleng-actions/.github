@@ -14,6 +14,9 @@ environment.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import cast
 
@@ -132,6 +135,7 @@ def holds_secret(job: Node) -> bool:
 def test_reader_sees_every_job() -> None:
     """The reader finds the jobs and steps each workflow declares."""
     assert set(jobs(CALLER)) == {
+        "check-inputs",
         "discover",
         "select",
         "repository",
@@ -261,6 +265,75 @@ def test_schedule_inputs_secret_and_variables() -> None:
         "group": "fuzz-sarif-publish",
         "cancel-in-progress": "false",
     }
+
+
+def test_fuzz_seconds_reaches_the_call_as_a_number() -> None:
+    """The checked fuzz_seconds is converted before the number input sees it.
+
+    Passed bare, the dispatch value reaches the called workflow as a
+    string and every repository call fails at input expansion.
+    """
+    caller = cast("Node", jobs(CALLER)["repository"]["with"])
+    assert caller["fuzz_seconds"] == (
+        "${{ fromJSON(needs.check-inputs.outputs.fuzz_seconds) }}"
+    )
+
+
+def test_bad_fuzz_seconds_is_refused_before_any_repository_job() -> None:
+    """A secret-free job refuses, by name, what fromJSON would not make whole.
+
+    Only a scheduled run takes the default, so a dispatched 0 or empty
+    value reaches the check rather than an '|| 300' fallback.
+    """
+    caller = jobs(CALLER)
+    check = caller["check-inputs"]
+    assert not holds_secret(check)
+    assert check["permissions"] == {}
+    assert "check-inputs" in cast("list[str]", caller["repository"]["needs"])
+    assert "check-inputs" in cast("list[str]", caller["notify-failure"]["needs"])
+    assert check["outputs"] == {
+        "fuzz_seconds": "${{ steps.fuzz-seconds.outputs.fuzz_seconds }}"
+    }
+    assert "inputs.fuzz_seconds ||" not in CALLER.read_text(encoding="utf-8")
+    [step] = [s for s in steps(check) if s.get("name") == "Check fuzz_seconds"]
+    assert step["id"] == "fuzz-seconds"
+    env = cast("dict[str, str]", step["env"])
+    assert env["FUZZ_SECONDS"] == (
+        "${{ format('{0}', github.event_name == 'schedule' && 300"
+        " || inputs.fuzz_seconds) }}"
+    )
+    script = str(step["run"])
+    bash = shutil.which("bash")
+    assert bash is not None
+    with tempfile.TemporaryDirectory() as scratch:
+        output = Path(scratch) / "output"
+        for value, accepted in (
+            ("300", True),
+            ("1", True),
+            ("2700", True),
+            ("0", False),
+            ("-5", False),
+            ("1.5", False),
+            ("0300", False),
+            ("1e3", False),
+            ("abc", False),
+            ("", False),
+        ):
+            output.write_text("", encoding="utf-8")
+            result = subprocess.run(
+                [bash, "-c", script],
+                env={"FUZZ_SECONDS": value, "GITHUB_OUTPUT": str(output)},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert (result.returncode == 0) == accepted, value
+            written = output.read_text(encoding="utf-8")
+            if accepted:
+                assert written == f"fuzz_seconds={value}\n", value
+            else:
+                assert result.stdout.startswith("::error::fuzz_seconds "), value
+                assert not written, value
 
 
 def test_fuzz_job_fails_unless_the_cache_holds_its_state() -> None:
