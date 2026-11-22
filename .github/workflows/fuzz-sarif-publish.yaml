@@ -87,6 +87,52 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Refuse a fuzz_seconds that is not a positive whole number here, by
+  # name, rather than at the repository call's input expansion, where
+  # GitHub names only the line. Only a scheduled run, which has no
+  # inputs, takes the default: a fallback such as '|| 300' would also
+  # replace a dispatched 0 or empty value and so accept it. The checked
+  # value is this job's output, which the repository job converts.
+  check-inputs:
+    name: 'Check dispatch inputs'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      fuzz_seconds: '${{ steps.fuzz-seconds.outputs.fuzz_seconds }}'
+    steps:
+      # Load the egress allow-list out-of-band from lfreleng-actions/.github
+      # and publish it as $CONNECTION_ALLOW_LIST for the harden-runner step.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
+        with:
+          config: '@dfa09089d9d88230380539d2116810910347d378'  # v0.22.0
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c  # v2.23.0
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Check fuzz_seconds'
+        id: 'fuzz-seconds'
+        shell: bash
+        env:
+          # yamllint disable-line rule:line-length
+          FUZZ_SECONDS: "${{ format('{0}', github.event_name == 'schedule' && 300 || inputs.fuzz_seconds) }}"
+        run: |
+          # Check fuzz_seconds
+          set -euo pipefail
+          if [[ ! "${FUZZ_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+            printf '::error::fuzz_seconds must be a positive whole %s\n' \
+              "number of seconds, not $(printf '%q' "${FUZZ_SECONDS}")"
+            exit 1
+          fi
+          echo "fuzz_seconds: ${FUZZ_SECONDS}"
+          echo "fuzz_seconds=${FUZZ_SECONDS}" >> "${GITHUB_OUTPUT}"
+
   discover:
     name: 'Discover repositories'
     permissions:
@@ -220,6 +266,7 @@ jobs:
   repository:
     name: '${{ matrix.repo }}'
     needs:
+      - 'check-inputs'
       - 'discover'
       - 'select'
     if: needs.select.outputs.count != '0'
@@ -241,7 +288,10 @@ jobs:
       default_branch: '${{ matrix.default_branch }}'
       commit: '${{ matrix.commit }}'
       harnesses: '${{ matrix.harnesses }}'
-      fuzz_seconds: ${{ inputs.fuzz_seconds || 300 }}
+      # A dispatch hands fuzz_seconds over as a string, which the
+      # called workflow's number input refuses ("Unexpected value");
+      # fromJSON turns check-inputs' checked string into a number.
+      fuzz_seconds: ${{ fromJSON(needs.check-inputs.outputs.fuzz_seconds) }}
       dry_run: ${{ inputs.dry_run || false }}
     secrets:
       token: '${{ secrets.FUZZ_SARIF_PAT }}'
@@ -327,6 +377,7 @@ jobs:
   notify-failure:
     name: 'Notify Slack on failure'
     needs:
+      - 'check-inputs'
       - 'discover'
       - 'select'
       - 'repository'
