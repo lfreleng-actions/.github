@@ -139,6 +139,15 @@ level. Each entry below says how the rest reach repositories.
   attention are easy to spot. See
   [Organisation-wide aislop SARIF publisher](#organisation-wide-aislop-sarif-publisher)
   below for setup.
+- **[`linting.yaml`](.github/workflows/linting.yaml)** —
+  Organisation-wide pre-commit hooks, run with
+  [prek](https://github.com/j178/prek) on GitHub runners in place of
+  pre-commit.ci. Runs on every pull request across the organisation as
+  a *required workflow* via an organisation ruleset. By default it runs
+  the hooks each repository lists under `ci.skip`, the ones
+  pre-commit.ci cannot run; a repository migrated off pre-commit.ci
+  sets `LINTING_MODE` to `all` to run every hook. See
+  [Organisation-wide linting](#organisation-wide-linting) below.
 - **[`fuzz-sarif-publish.yaml`](.github/workflows/fuzz-sarif-publish.yaml)**
   — A scheduled (daily) workflow that finds every in-scope repository
   carrying a Python fuzz harness, fuzzes each harness for a bounded
@@ -697,6 +706,115 @@ three optional inputs as the zizmor publisher (`org`, `repo`, and
 [Manual dispatch inputs](#manual-dispatch-inputs) above for their
 semantics. The `token` input falls back to the `AISLOP_SARIF_PAT`
 secret when blank.
+
+### Organisation-wide linting
+
+[`linting.yaml`](.github/workflows/linting.yaml) runs each
+repository's `.pre-commit-config.yaml` hooks on its pull requests,
+replacing pre-commit.ci. The file is a thin caller of the `linting.yaml`
+reusable workflow in
+[generic-workflows](https://github.com/lfreleng-actions/generic-workflows);
+that repository's
+[`docs/linting.md`](https://github.com/lfreleng-actions/generic-workflows/blob/main/docs/linting.md)
+describes the hook selection, the fast abort and the security model.
+
+#### Choosing what runs
+
+Two repository variables, or organisation variables for an estate-wide
+default, steer the run:
+
+<!-- markdownlint-disable MD013 -->
+
+| Variable             | Value                   | Effect                                                 |
+| -------------------- | ----------------------- | ------------------------------------------------------ |
+| `LINTING_MODE`       | unset, or `ci-skipped`  | Run the hooks under `ci.skip` alone                    |
+| `LINTING_MODE`       | `all`, or anything else | Run every hook in the configuration                    |
+| `LINTING_SKIP_HOOKS` | hook ids or aliases     | Exclude these in either mode, space or comma separated |
+
+<!-- markdownlint-enable MD013 -->
+
+The default suits a repository pre-commit.ci still serves:
+pre-commit.ci runs the rest, and this workflow runs the hooks it
+cannot, such as `gha-workflow-linter`, which calls the GitHub API.
+A repository with no configuration, or an empty `ci.skip`, finishes
+green after one short plan job.
+
+An unrecognised `LINTING_MODE` runs every hook rather than the
+narrower set, so a typo costs duplicated work instead of a green check
+over fewer hooks than intended.
+
+The reusable fails a run whose `ci.skip` names a hook the
+configuration does not define, so remove a hook and its `ci.skip`
+entry together. Use `LINTING_SKIP_HOOKS` for a hook another CI job
+already runs, such as a test suite.
+
+#### Enabling linting org-wide
+
+Configure `linting.yaml` as a *required workflow* via an organisation
+ruleset, starting in the non-blocking evaluation status, so it runs on
+every pull request but blocks nothing.
+
+<!-- The empty comment stops write-good flagging GitHub's own label
+for that status, and does not render. -->
+
+1. Go to **Organisation settings** → [**Repository →
+   Rulesets**][org-rulesets] (you must be an organisation owner).
+2. Click **New ruleset** → **New branch ruleset**.
+3. Set:
+   - **Ruleset name**: `pre-commit linting`
+   - **Enforcement status**: **E<!-- -->valuate**
+   - **Bypass list**: leave empty
+   - **Target repositories**: `All repositories`
+   - **Target branches**: `Default branch`
+4. Under **Rules**, enable **Require workflows to pass before merging**
+   and click **Add workflow**:
+   - **Repository**: `lfreleng-actions/.github`
+   - **Workflow file path**: `.github/workflows/linting.yaml`
+   - **Ref**: `main`
+5. Click **Create**.
+
+While the ruleset evaluates, the workflow runs and the ruleset's
+**Rule Insights** page records which pull requests would have failed.
+A pull request
+whose run passed stays mergeable once the ruleset turns `Active`,
+without a new run. The checks appear in pull requests under
+`Linting 🧹` as `Linting / Lint plan` and one
+`Linting / Lint: <hook>` per hook.
+
+Watch for these while the ruleset evaluates:
+
+- **Fork pull requests run without a token.** The reusable withholds
+  the workflow token where the hooks come from outside the base
+  repository, bot pull requests from `lfreleng-bot-forks` included.
+  `gha-workflow-linter` then shares GitHub's unauthenticated API limit
+  of 60 requests an hour, and fails with its rate-limited exit code
+  when the limit runs out.
+- **Repositories with their own caller run twice.** A repository
+  carrying its own `linting.yaml` caller of the reusable gets that run
+  as well as this one; remove the local caller once the ruleset is
+  `Active`.
+
+#### Migrating a repository off pre-commit.ci
+
+Migrate repositories in batches, checking each batch's pull requests
+before starting the next. For each repository:
+
+1. Confirm `prek run --all-files` passes on its default branch.
+2. Set `LINTING_MODE` to `all`:
+
+   ```bash
+   gh variable set LINTING_MODE --body all \
+     --repo lfreleng-actions/<repository>
+   ```
+
+3. Remove the repository from the pre-commit.ci app's repository
+   access, so the two do not run the same hooks.
+4. Delete any repository-local `linting.yaml` caller.
+
+The `ci:` block in `.pre-commit-config.yaml` is inert under `all`,
+and can stay until a later clean-up. pre-commit.ci also raised the
+weekly hook `autoupdate` pull requests, and removing a repository
+from it stops them, so arrange a replacement before migrating.
 
 ### Organisation-wide fuzz SARIF publisher
 

@@ -1,0 +1,71 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Organisation-wide pre-commit hooks, run with prek on GitHub runners.
+#
+# This file is the canonical copy an organisation ruleset runs on
+# every pull request in the organisation, replacing pre-commit.ci. It
+# delegates to the 'linting.yaml' reusable workflow in
+# lfreleng-actions/generic-workflows; see its docs/linting.md for the
+# selection rules, the fast abort and the security model.
+#
+# Each repository chooses what runs with the LINTING_MODE repository
+# (or organisation) variable:
+#
+#   unset, or 'ci-skipped'  Run the hooks listed under ci.skip in the
+#                           repository's .pre-commit-config.yaml: the
+#                           ones pre-commit.ci cannot run. For
+#                           repositories pre-commit.ci still serves.
+#   'all'                   Run every hook in the configuration. For
+#                           repositories migrated off pre-commit.ci.
+#
+# Any other value runs every hook too. A mistyped mode then costs
+# duplicated work, which is visible, rather than a narrower selection
+# reporting green, which is not.
+#
+# LINTING_SKIP_HOOKS optionally names hook ids or aliases, space or
+# comma separated, that this workflow excludes in either mode: hooks
+# another CI job already runs, such as a test suite.
+#
+# A repository with no configuration, or none under ci.skip in the
+# default mode, finishes green after a single short plan job.
+name: 'Linting 🧹'
+
+# Ruleset workflows run on pull_request, pull_request_target and
+# merge_group alone, always with each event's default activity types,
+# whatever filters this file declares. The reusable refuses
+# pull_request_target, which would run fork-supplied hooks under the
+# base repository's token.
+# yamllint disable-line rule:truthy
+on:
+  pull_request:
+
+permissions: {}
+
+# A literal group rather than '${{ github.workflow }}', which resolves
+# to the workflow NAME and would collide with a repository's own
+# 'Linting 🧹' caller. The 'org-' prefix keeps the two apart while
+# repositories still carry one.
+#
+# Never cancel, and queue rather than replace: a cancelled run beside
+# a successful one for the same head SHA blocks ruleset evaluation.
+concurrency:
+  group: 'org-linting-${{ github.ref }}'
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  linting:
+    name: 'Linting'
+    permissions:
+      contents: read
+    # yamllint disable-line rule:line-length
+    uses: lfreleng-actions/generic-workflows/.github/workflows/linting.yaml@7b5720020b61b6aead324badce794089cc2ae208  # v0.8.2
+    with:
+      # GitHub compares strings case-insensitively, so 'CI-Skipped'
+      # matches too.
+      ci_skipped: >-
+        ${{ vars.LINTING_MODE == ''
+        || vars.LINTING_MODE == 'ci-skipped' }}
+      skip_hooks: '${{ vars.LINTING_SKIP_HOOKS }}'
