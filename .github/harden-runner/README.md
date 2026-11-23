@@ -58,6 +58,14 @@ the requested name. That fallback works while a single
 
 The organisation list stays the baseline for general workflows.
 
+Every `*.txt` file under this directory, at any depth, is an
+allow-list, and the [DNS check](#every-hostname-must-resolve) finds
+and checks each one with no list of names to keep up to date. So
+nothing else here may take the `.txt` suffix: notes and other data
+need another extension. A list path holds letters, digits, `_`, `-`
+and `.`, with each directory and file name starting with a letter or
+digit; the check rejects any other name as a failure.
+
 ### Purpose-specific lists
 
 [`lf-gerrit-servers/`](lf-gerrit-servers/) is the first directory
@@ -149,10 +157,13 @@ Two safeguards back this up:
   by default, drops any that no longer resolve before harden-runner
   sees them (`invalid_records: filter`).
 - The daily [`allow-list-dns-check.yaml`][dns-check] workflow checks
-  the organisation list and the Gerrit servers list on the default
-  branch and at the latest release, and posts any hostname that no
-  longer resolves to `#releng-scm`. It does not check the bot agent
-  lists.
+  every list here on the default branch and at the latest release,
+  and posts any hostname that no longer resolves to `#releng-scm`.
+  It also runs on each pull request that changes a list, checking the
+  lists at the pull request's head commit: the check fails when a
+  record definitively does not resolve, and warns without failing
+  about a record that reached no verdict, which points at a transient
+  resolver error rather than the list.
 
 [hr]: https://github.com/step-security/harden-runner
 [block]: https://github.com/lfreleng-actions/harden-runner-block-action
