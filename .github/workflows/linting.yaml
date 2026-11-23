@@ -1,0 +1,70 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Organisation-wide pre-commit linting, replacing pre-commit.ci.
+#
+# This workflow lives in lfreleng-actions/.github and runs across the
+# organisation through an organisation ruleset, as
+# semantic-pull-request.yaml, zizmor.yaml and aislop.yaml do. It is a
+# thin caller of the linting.yaml reusable workflow in
+# lfreleng-actions/generic-workflows; see that repository's
+# docs/linting.md for the full reference.
+#
+# Two variables, set on the organisation or overridden per
+# repository, select what runs:
+#
+#   LINTING_MODE        Empty or 'ci-skipped' (the default) runs only
+#                       the hooks the configuration lists under
+#                       'ci.skip', the ones pre-commit.ci cannot run.
+#                       'all' runs every hook, for a repository
+#                       migrated off pre-commit.ci. Any other value
+#                       also runs every hook, so a typo costs
+#                       duplicated work rather than a green check
+#                       over fewer hooks.
+#   LINTING_SKIP_HOOKS  Hook ids to leave out, for hooks another CI
+#                       job in the repository already runs.
+#
+# A repository with nothing to lint (no .pre-commit-config.yaml, or no
+# hook left once the selection applies) gets a fast green exit: the
+# reusable plans no hook jobs and passes.
+#
+# See README.md ("Organisation-wide linting") for org-admin setup.
+
+name: 'Linting 🧹'
+
+# Ruleset workflows run on 'pull_request', 'pull_request_target' and
+# 'merge_group' alone, with each event's default activity types
+# whatever the file filters say. The reusable refuses
+# 'pull_request_target', so this workflow triggers on 'pull_request'.
+# yamllint disable-line rule:truthy
+on:
+  pull_request:
+
+permissions: {}
+
+# Scope the group to this check, not to '${{ github.workflow }}', which
+# resolves to the workflow NAME. A repository may still carry its own
+# 'Linting 🧹' caller, whose group is 'linting-...'; the 'org-' prefix
+# keeps this organisation-level copy clear of it. See
+# semantic-pull-request.yaml for why the group neither cancels nor
+# replaces queued runs.
+concurrency:
+  group: 'org-linting-${{ github.ref }}'
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  linting:
+    name: 'Linting'
+    # The checks read 'Linting / Lint plan' and 'Linting / Lint: <hook>'.
+    # yamllint disable-line rule:line-length
+    uses: lfreleng-actions/generic-workflows/.github/workflows/linting.yaml@7b5720020b61b6aead324badce794089cc2ae208  # v0.8.2
+    permissions:
+      contents: read
+    with:
+      # Unset or 'ci-skipped' runs the 'ci.skip' hooks alone; 'all' and
+      # any unrecognised value run every hook.
+      # yamllint disable-line rule:line-length
+      ci_skipped: ${{ vars.LINTING_MODE == '' || vars.LINTING_MODE == 'ci-skipped' }}
+      skip_hooks: '${{ vars.LINTING_SKIP_HOOKS }}'
