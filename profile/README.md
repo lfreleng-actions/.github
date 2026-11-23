@@ -72,6 +72,7 @@ with signed tags and provenance attestations.
 | [helm-chart-publish-action]      | Publish Helm Charts to an OCI container repository          |
 | [chartmuseum-action]             | Start and run a ChartMuseum Helm Chart repository           |
 | [central-publish-action]         | Publish Maven artefacts to the Maven Central Portal         |
+| [artifactory-publish-action]     | Publish a Maven repository tree to JFrog Artifactory        |
 | [maven-stage-prep-action]        | Prepare a Maven project for a staging release               |
 | [maven-snapshot-metadata-action] | Seed and prune Maven SNAPSHOT metadata in Nexus             |
 | [nexus-staging-action]           | Manage the Sonatype Nexus staging repository lifecycle      |
@@ -104,7 +105,6 @@ with signed tags and provenance attestations.
 | [python-project-version-action]       | Return the version of a Python project                    |
 | [python-project-version-patch-action] | Replace/update the Python project version string          |
 | [python-dynamic-version-action]       | Check dynamic versioning setup in pyproject.toml          |
-| [python-supported-versions-action]    | Extract supported Python versions for build/matrix jobs   |
 | [python-dependencies-update-action]   | Update the dependencies of a Python project               |
 
 <!-- markdownlint-enable MD013 -->
@@ -463,6 +463,7 @@ to all repositories unless otherwise stated.
 [helm-chart-publish-action]: https://github.com/lfreleng-actions/helm-chart-publish-action
 [chartmuseum-action]: https://github.com/lfreleng-actions/chartmuseum-action
 [central-publish-action]: https://github.com/lfreleng-actions/central-publish-action
+[artifactory-publish-action]: https://github.com/lfreleng-actions/artifactory-publish-action
 [maven-stage-prep-action]: https://github.com/lfreleng-actions/maven-stage-prep-action
 [maven-snapshot-metadata-action]: https://github.com/lfreleng-actions/maven-snapshot-metadata-action
 [nexus-staging-action]: https://github.com/lfreleng-actions/nexus-staging-action
@@ -481,7 +482,6 @@ to all repositories unless otherwise stated.
 [python-project-version-action]: https://github.com/lfreleng-actions/python-project-version-action
 [python-project-version-patch-action]: https://github.com/lfreleng-actions/python-project-version-patch-action
 [python-dynamic-version-action]: https://github.com/lfreleng-actions/python-dynamic-version-action
-[python-supported-versions-action]: https://github.com/lfreleng-actions/python-supported-versions-action
 [python-dependencies-update-action]: https://github.com/lfreleng-actions/python-dependencies-update-action
 
 <!-- Tag & Version Validation Actions -->
