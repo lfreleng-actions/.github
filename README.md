@@ -88,12 +88,16 @@ level. Each entry below says how the rest reach repositories.
   [Allow-list bump sweep](#allow-list-bump-sweep) below for setup.
 - **[`allow-list-dns-check.yaml`](.github/workflows/allow-list-dns-check.yaml)**
   — A scheduled (daily, 04:30 UTC) check that every non-wildcard
-  hostname in the harden-runner egress allow-list still resolves, on
-  the default branch and at the latest release. harden-runner fails
-  open when any such entry fails to resolve (it never pre-resolves
-  wildcards, so neither does the check), so the workflow posts the
-  offending records to `#releng-scm` for removal or correction. A
-  manual run can send a test message to verify the Slack wiring.
+  hostname in each harden-runner egress allow-list still resolves, on
+  the default branch and at the latest release. It finds the lists
+  itself: every `*.txt` file under `.github/harden-runner/`.
+  harden-runner fails open when any such entry fails to resolve (it
+  never pre-resolves wildcards, so neither does the check), so the
+  workflow posts the offending records to `#releng-scm` for removal or
+  correction. A manual run can send a test message to verify the
+  Slack wiring. On a pull request that changes a list or the workflow,
+  it checks the lists at the head commit and fails on any record that
+  does not resolve, without secrets or Slack.
 - **[`repo-audit.yaml`](.github/workflows/repo-audit.yaml)** — Runs on
   a weekly schedule (Monday 10:00 UTC). Compares the current list of
   repositories in the organisation against the profile README and sends a
@@ -1446,8 +1450,10 @@ the official
 [Slack GitHub Action](https://github.com/slackapi/slack-github-action).
 They reuse the same `SLACK_BOT_TOKEN` secret and `SLACK_CHANNEL_ID`
 variable, and post to `#releng-scm`: the publishers when a scheduled
-run fails, and the DNS check when an allow-list record no longer
-resolves. Complete the following one-time setup steps:
+run fails, and the scheduled DNS check when an allow-list record no
+longer resolves or a check does not complete, listing every list it
+checked (its pull request runs never post). Complete the following
+one-time setup steps:
 
 ### 1. Create a Slack App
 
