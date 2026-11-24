@@ -65,7 +65,7 @@ wheels = [
 
 [[package]]
 name = "gha-workflow-linter"
-version = "1.12.0"
+version = "1.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -78,9 +78,9 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/28/a7/f6d3a4318a86d87c9c14a35006c18bd298da0ab80e685e7de1c24b0a8c9a/gha_workflow_linter-1.12.0.tar.gz", hash = "sha256:5df953c07a5d9e12e1eb7cecbafbe370e3972b3c9d311efafb4e364ae0e75a17", size = 958468, upload-time = "2026-11-13T14:07:19.47Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/6b/8a6611b987e577a2da77ec308e5b401c1456512d1f122f65a3bd3db98452/gha_workflow_linter-1.13.0.tar.gz", hash = "sha256:8c81a792872b24f02fd7d814eef9c214741e0b3b4584f5253263772aebd3f38b", size = 984460, upload-time = "2026-11-23T18:18:26.136Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f9/d8/11d12771aacdb56ae93909aa0f1f4da03415ed8deff3f4d3dcf67751f85d/gha_workflow_linter-1.12.0-py3-none-any.whl", hash = "sha256:454f36030fdbe15d65bedd7fb40c5a5ff9dfce9897cd0b38b2651156974cd539", size = 402943, upload-time = "2026-11-13T14:07:17.495Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/9c/dd8262cc8caeff3011695b4169afeafdffd4ebeb63fda922d3315d4110ef/gha_workflow_linter-1.13.0-py3-none-any.whl", hash = "sha256:443927b38a1164cd8fd14ce8f73ce8f8bda3f09849855cd72c55f6a16aa39c10", size = 406400, upload-time = "2026-11-23T18:18:24.561Z" },
 ]
 
 [[package]]
@@ -159,7 +159,7 @@ dev = [
     { name = "basedpyright", specifier = "==1.40.2" },
     { name = "pytest", specifier = "==9.2.0" },
 ]
-sweep = [{ name = "gha-workflow-linter", specifier = "==1.12.0" }]
+sweep = [{ name = "gha-workflow-linter", specifier = "==1.13.0" }]
 
 [[package]]
 name = "markdown-it-py"
