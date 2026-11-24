@@ -271,7 +271,7 @@ jobs:
       - name: 'Run aislop quality gate (changed files)'
         id: 'scan'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/aislop-scan-action@a08560b1192d84439e310dfdb9f22c2ada09c585  # v0.4.3
+        uses: lfreleng-actions/aislop-scan-action@6de0cb44b335ae1497d9ff55363b72d740de6401  # v0.5.0
         with:
           # In ratchet mode the diff base is the merge base resolved
           # above, the commit the base scan below covers, so the ratchet
@@ -340,7 +340,7 @@ jobs:
         if: ${{ steps.base_tree.outputs.ready == 'true' }}
         continue-on-error: true
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/aislop-scan-action@a08560b1192d84439e310dfdb9f22c2ada09c585  # v0.4.3
+        uses: lfreleng-actions/aislop-scan-action@6de0cb44b335ae1497d9ff55363b72d740de6401  # v0.5.0
         with:
           scan-mode: 'changes'
           base: '${{ steps.base_tree.outputs.head-sha }}'
