@@ -149,6 +149,12 @@ another repository:
 Local references such as `uses: './.github/workflows/x.yaml'` take no
 `@ref` and are exempt: they resolve inside the calling commit.
 
+Dependabot updates the `uses:` line and nothing else, so agents MUST
+NOT copy a pinned SHA or version into a test, script or check: every
+bump would break it. A check on pins MUST test that call sites agree,
+that each is no older than a stated minimum version, or how the step
+is wired, and never an exact SHA or version.
+
 ### 4.5 Workflow security audits
 
 Before pushing any workflow change, agents MUST run a local
