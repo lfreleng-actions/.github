@@ -250,6 +250,12 @@ cdn.amazonlinux.com:443
 # Azul Zulu JDK download CDN (Java toolchain setup).
 cdn.azul.com:443
 
+# Sonatype Central Portal Publisher API; uploads bundles, polls
+# deployment status, and publishes and drops deployments for Maven
+# Central (central-publish-action). An exact host: '*.sonatype.com'
+# would open far more than this needs.
+central.sonatype.com:443
+
 # crates.io registry API, named as 'api' in the index's config.json:
 # 'cargo publish' uploads here, and rust-lang/crates-io-auth-action
 # exchanges a GitHub OIDC token here for a Trusted Publishing token
