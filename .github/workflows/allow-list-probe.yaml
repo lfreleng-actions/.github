@@ -25,8 +25,8 @@
 # block mode on both architectures, check the agent is enforcing it
 # (harden-runner fails open when an entry does not resolve), and
 # update apt's package indexes on the runner and in Ubuntu and Debian
-# containers, which reach their mirrors over plain HTTP. Rule 2 broke
-# exactly that on arm64.
+# containers. The HTTP legs protect existing consumers; the HTTPS legs
+# repeat the probe without port 80 or the emergency HTTP fallback.
 #
 # Audit mode cannot answer any of this, since it never enforces
 # allowed-endpoints.
@@ -151,18 +151,15 @@ jobs:
           fi
           echo "All matching rules held on ${RUNNER_ARCH} ✅"
 
-  shared-list:
-    name: 'Shared allow-list (${{ matrix.runner }})'
-    runs-on: '${{ matrix.runner }}'
-    timeout-minutes: 15
+  https-policy:
+    name: 'Prepare the shared allow-list without port 80'
+    runs-on: 'ubuntu-24.04'
+    timeout-minutes: 5
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: ['ubuntu-24.04', 'ubuntu-24.04-arm']
+    outputs:
+      endpoints: '${{ steps.filter.outputs.endpoints }}'
     steps:
-      # This change's own list: a pull request's head, else this commit.
       - name: 'Load the allow-list under test'
         # yamllint disable-line rule:line-length
         uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
@@ -175,24 +172,92 @@ jobs:
         uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c  # v2.23.0
         with:
           egress-policy: 'block'
+          allowed-endpoints: 'github.com:443'
+
+      # harden-runner reads its inputs in a pre hook, before this
+      # shell step could change the policy in the same job.
+      - name: 'Drop every port 80 endpoint'
+        id: 'filter'
+        shell: bash
+        run: |
+          endpoints="$(awk '{
+            for (i = 1; i <= NF; i++)
+              if ($i !~ /:80$/) print $i
+          }' <<< "${CONNECTION_ALLOW_LIST}" | paste -sd ' ' -)"
+          if [ -z "${endpoints}" ]; then
+            echo '::error::The filtered allow-list is empty'
+            exit 1
+          fi
+          printf 'endpoints=%s\n' "${endpoints}" >> "${GITHUB_OUTPUT}"
+
+  shared-list:
+    # yamllint disable-line rule:line-length
+    name: "Shared allow-list (${{ matrix.runner }}${{ matrix.transport == 'https' && ', HTTPS' || '' }})"
+    needs: 'https-policy'
+    runs-on: '${{ matrix.runner }}'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ['ubuntu-24.04', 'ubuntu-24.04-arm']
+        transport: ['http', 'https']
+    steps:
+      # This change's own list: a pull request's head, else this commit.
+      - name: 'Load the allow-list under test'
+        if: matrix.transport == 'http'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
+        with:
+          # yamllint disable-line rule:line-length
+          config: '${{ github.repository_owner }}@${{ github.event.pull_request.head.sha || github.sha }}'
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c  # v2.23.0
+        with:
+          egress-policy: 'block'
+          # yamllint disable rule:line-length
           allowed-endpoints: >
-            ${{ env.CONNECTION_ALLOW_LIST }}
+            ${{ matrix.transport == 'http' && env.CONNECTION_ALLOW_LIST || '' }}
+            ${{ matrix.transport == 'https' && needs.https-policy.outputs.endpoints || '' }}
+          # yamllint enable rule:line-length
 
       # harden-runner reverts to no filtering at all when any explicit
       # entry fails its startup lookup, and apt would then pass for the
       # wrong reason; so first prove this job's agent is enforcing.
       - name: 'Check block mode is enforced'
         shell: bash
+        env:
+          # The HTTPS legs do not use the loader's readiness wait.
+          ATTEMPTS: "${{ matrix.transport == 'https' && 24 || 1 }}"
         run: |
           # Check block mode is enforced
           set -euo pipefail
-          apex="$(getent ahostsv4 ubuntu.com | awk 'NR == 1 { print $1 }')"
-          if [ "${apex}" != "${SINKHOLE}" ]; then
-            echo "::error::ubuntu.com, absent from the list, resolved to" \
-              "'${apex}', not the sinkhole: block mode is not enforced"
-            exit 1
-          fi
-          echo "Block mode enforced: ubuntu.com refused ✅"
+          for ((attempt = 1; attempt <= ATTEMPTS; attempt++)); do
+            apex="$(getent ahostsv4 ubuntu.com | awk 'NR == 1 { print $1 }')" \
+              || apex=''
+            if [ "${apex}" = "${SINKHOLE}" ]; then
+              echo "Block mode enforced: ubuntu.com refused ✅"
+              exit 0
+            fi
+            if (( attempt < ATTEMPTS )); then
+              sleep 5
+            fi
+          done
+          echo "::error::ubuntu.com, absent from the list, resolved to" \
+            "'${apex}', not the sinkhole: block mode is not enforced"
+          exit 1
+
+      - name: 'Enforce HTTPS for apt without fallback'
+        if: matrix.transport == 'https'
+        id: 'apt'
+        # yamllint disable-line rule:line-length
+        uses: lfreleng-actions/apt-https-enforce-action@107838afeb79d37aeddb2b7f227f80f51df25180  # v0.0.1
+        with:
+          http_fallback: 'false'
+          http_fallback_override: 'false'
 
       # --error-on=any fails on any index it could not fetch, where a
       # plain update only warns and exits 0.
@@ -205,16 +270,36 @@ jobs:
       # yamllint disable rule:line-length
       - name: 'Update apt indexes in Ubuntu and Debian containers'
         shell: bash
+        env:
+          TRANSPORT: '${{ matrix.transport }}'
+          BOOTSTRAP: '${{ steps.apt.outputs.container_bootstrap }}'
         run: |
           # Update apt indexes in Ubuntu and Debian containers
           set -euo pipefail
+          if [ "${TRANSPORT}" = 'https' ]; then
+            if [ ! -f "${BOOTSTRAP}" ]; then
+              echo '::error::The apt action did not provide a bootstrap script'
+              exit 1
+            fi
+            action_dir="$(dirname -- "${BOOTSTRAP}")"
+            bootstrap_name="$(basename -- "${BOOTSTRAP}")"
+            host_ca='/etc/ssl/certs/ca-certificates.crt'
+          fi
           # Multi-architecture index digests: ubuntu:24.04 and
           # debian:trixie-slim.
           ubuntu='sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55'
           debian='sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f'
           for image in "ubuntu@${ubuntu}" "debian@${debian}"; do
             echo "::group::${image%%@*}"
-            docker run --rm "${image}" apt-get update --error-on=any
+            if [ "${TRANSPORT}" = 'https' ]; then
+              docker run --rm \
+                --mount "type=bind,src=${action_dir},dst=/action,readonly" \
+                --mount "type=bind,src=${host_ca},dst=/run/host-ca.pem,readonly" \
+                "${image}" sh "/action/${bootstrap_name}" \
+                /run/host-ca.pem false false
+            else
+              docker run --rm "${image}" apt-get update --error-on=any
+            fi
             echo '::endgroup::'
           done
           echo "Shared allow-list serves apt on ${RUNNER_ARCH} ✅"

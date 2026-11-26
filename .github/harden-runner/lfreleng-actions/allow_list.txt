@@ -160,9 +160,10 @@
 # update-motd: archive, security, ports, esm, changelogs, motd,
 # snapshot and keyserver (the last also reached by the Sonar
 # scanner via sonarqube-cloud-scan-action), over HTTPS. apt fails
-# over between the mirrors in the runner's /etc/apt/apt-mirrors.txt,
-# and Ubuntu's images use plain HTTP; a wildcard opens one port, so
-# each host apt reaches over HTTP has explicit entries below.
+# over between the mirrors in the runner's /etc/apt/apt-mirrors.txt.
+# The explicit port 80 entries below serve consumers not yet on HTTPS
+# and the emergency HTTP fallback in apt-https-enforce-action under
+# block mode. Each host needs explicit entries for both ports.
 *.ubuntu.com:443
 
 # SonarQube analysis sensor cache (AWS S3); reached by the Sonar
@@ -228,9 +229,10 @@ auth.docker.io:443
 
 # Ubuntu package archive over apt; the priority-1 mirror in the amd64
 # runner's /etc/apt/apt-mirrors.txt (go-httpbin-action,
-# python-build-action). Reached over plain HTTP, which
-# '*.ubuntu.com' does not open, and it serves no HTTPS; removing this
-# line reintroduces the apt failover breakage.
+# python-build-action). The mirror serves HTTPS, so list port 443
+# explicitly: the port 80 entry for legacy HTTP and emergency fallback
+# overrides '*.ubuntu.com'.
+azure.archive.ubuntu.com:443
 azure.archive.ubuntu.com:80
 
 # SonarSource scanner binary download; sonarqube-cloud-scan-action.
@@ -262,10 +264,9 @@ central.sonatype.com:443
 # (rust-crate-publish-action). An apex host, so no wildcard covers it.
 crates.io:443
 
-# Debian package archive over apt, on both ports: Debian's container
-# images use plain HTTP, and HTTPS is the alternative. '*.debian.org'
-# opens 443 alone, and an explicit entry overrides it, so both ports
-# are listed.
+# Debian package archive over apt. Port 80 serves container images
+# not yet on HTTPS and the emergency HTTP fallback under block mode.
+# An explicit entry overrides '*.debian.org', so list both ports.
 deb.debian.org:443
 deb.debian.org:80
 

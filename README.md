@@ -227,9 +227,8 @@ checks it on both architectures under `egress-policy: block`:
 The agent resolves a wildcard-matched name when a job looks it up, then
 opens its address on the wildcard's first port. This sorted file puts
 `:443` first, so a `*.host:80` line never takes effect: a host reached
-over plain HTTP, as apt reaches its mirrors, needs explicit entries for
-every port it uses. Note that `egress-policy: audit` cannot show any of
-this, because audit mode never enforces `allowed-endpoints`.
+over plain HTTP needs explicit entries for every port it uses. Audit
+mode never enforces `allowed-endpoints`, so it cannot show these rules.
 
 An August 2026 probe read the third rule as a label limit:
 `*.ubuntu.com` admitted `archive.ubuntu.com` over HTTPS but refused
@@ -249,6 +248,20 @@ Two consequences when editing the allow-list:
   account, anyone's included.
 
 #### Distribution package mirrors
+
+Use [apt-https-enforce-action][apt-https] before installing apt packages
+on Debian and Ubuntu. The [allow-list probe workflow][apt-probe] tests
+HTTPS under block mode without any port 80 entries on amd64 and arm64.
+
+For emergency HTTP fallback, set the repository or organisation Actions
+variable `APT_HTTP_FALLBACK` to `true`. Wire
+`${{ vars.APT_HTTP_FALLBACK }}` to the action's `http_fallback_override`
+input and unset the variable once HTTPS works again. Keep the mirror
+`:80` entries for consumers that still use HTTP and because block mode
+would deny the emergency retry without them.
+
+[apt-https]: https://github.com/lfreleng-actions/apt-https-enforce-action
+[apt-probe]: .github/workflows/allow-list-probe.yaml
 
 One gap no allow-list can close: Fedora, EPEL, CentOS Stream, Rocky,
 AlmaLinux, openSUSE and Arch ship repository configuration that resolves
