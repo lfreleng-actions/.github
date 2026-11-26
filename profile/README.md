@@ -100,7 +100,6 @@ with signed tags and provenance attestations.
 
 | Action                                | Description                                               |
 | ------------------------------------- | --------------------------------------------------------- |
-| [python-project-metadata-action]      | Extract Python project metadata from a repository         |
 | [python-project-name-action]          | Extract a Python project name and derive the package name |
 | [python-project-version-action]       | Return the version of a Python project                    |
 | [python-project-version-patch-action] | Replace/update the Python project version string          |
@@ -477,7 +476,6 @@ to all repositories unless otherwise stated.
 [openstack-cron-action]: https://github.com/lfreleng-actions/openstack-cron-action
 
 <!-- Python Project Metadata Actions -->
-[python-project-metadata-action]: https://github.com/lfreleng-actions/python-project-metadata-action
 [python-project-name-action]: https://github.com/lfreleng-actions/python-project-name-action
 [python-project-version-action]: https://github.com/lfreleng-actions/python-project-version-action
 [python-project-version-patch-action]: https://github.com/lfreleng-actions/python-project-version-patch-action
