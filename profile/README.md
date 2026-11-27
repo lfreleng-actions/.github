@@ -5,9 +5,11 @@ SPDX-FileCopyrightText: 2026 The Linux Foundation
 
 # Linux Foundation Release Engineering
 
-[Documentation](https://docs.releng.linuxfoundation.org/)
+[General information for projects and consumers](https://docs.releng.linuxfoundation.org/)
 
-## GitHub Actions
+## GitHub Actions and Workflows
+
+[Activity statistics for this GitHub Organisation](https://lfreleng-actions.github.io/github-statistics-action/)
 
 The [Linux Foundation](https://www.linuxfoundation.org/) Release Engineering
 team maintains this organisation. It provides a comprehensive collection of
