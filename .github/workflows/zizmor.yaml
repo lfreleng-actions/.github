@@ -236,7 +236,7 @@ jobs:
       # adds (ratchet) or holds (absolute).
       - name: 'Compare findings with merge base'
         # yamllint disable-line rule:line-length
-        uses: lfreleng-actions/.github/actions/findings-ratchet@dfa09089d9d88230380539d2116810910347d378  # v0.22.0
+        uses: lfreleng-actions/.github/actions/findings-ratchet@39799460cf292525bf1dcc85900cd3a8a827ca68  # v0.23.1
         with:
           head-sarif: ${{ steps.head.outputs['sarif-file'] }}
           # Only a base audit that succeeded counts; anything else
