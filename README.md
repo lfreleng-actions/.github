@@ -1347,9 +1347,9 @@ removes.
   whole. Those pull requests carry a title without a version, list
   every host and its release in the body and the commit message, and
   the run warns that it found more than one.
-- Pull requests come from the organisation's `lf-releng-bot` GitHub
-  App, not from a maintainer. Code review is mandatory across the
-  organisation and nobody may approve their own work, so a sweep
+- Pull requests come from the sweep's own `lf-releng-allow-list-bot`
+  GitHub App, not from a maintainer. Code review is mandatory across
+  the organisation and nobody may approve their own work, so a sweep
   raising pull requests as a person would produce changes that person
   could not merge.
 - Commits reach the branch through the GitHub API rather than a push, so
@@ -1392,21 +1392,31 @@ removes.
 
 <!-- markdownlint-disable MD013 -->
 
-| Name                        | Kind     | Purpose                                                                                                                  |
-| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `LF_RELENG_BOT_CLIENT_ID`   | Variable | Client ID of the `lf-releng-bot` GitHub App, shared with the other bot-authored workflows                                |
-| `LF_RELENG_BOT_PRIVATE_KEY` | Secret   | Private key (PEM) for that App. The sweep mints a short-lived installation token scoped to the repositories in the sweep |
-| `ALLOW_LIST_BUMP_EXCLUDE`   | Variable | Optional extra exclude globs                                                                                             |
-| `SLACK_BOT_TOKEN`           | Secret   | Shared with the other scheduled workflows                                                                                |
-| `SLACK_CHANNEL_ID`          | Variable | Shared with the other scheduled workflows                                                                                |
+| Name                         | Kind                    | Purpose                                                                                                                   |
+| ---------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `ALLOW_LIST_BOT_CLIENT_ID`   | `production` variable   | Client ID of the `lf-releng-allow-list-bot` GitHub App, which serves this sweep alone                                     |
+| `ALLOW_LIST_BOT_PRIVATE_KEY` | `production` secret     | Private key (PEM) for that App. The sweep mints a short-lived installation token scoped to the repositories in the sweep  |
+| `ALLOW_LIST_BUMP_EXCLUDE`    | Variable                | Optional extra exclude globs                                                                                              |
+| `SLACK_BOT_TOKEN`            | Secret                  | Shared with the other scheduled workflows                                                                                 |
+| `SLACK_CHANNEL_ID`           | Variable                | Shared with the other scheduled workflows                                                                                 |
 
 <!-- markdownlint-enable MD013 -->
 
-The bot App must have write access to `contents`, `pull requests` and
-`workflows` on every repository the sweep covers. `workflows` matters in
-its own right: every file the sweep rewrites lives under
-`.github/workflows`. Minting the token fails outright when a repository
-in scope is missing from the installation.
+The App needs write access to `contents`, `pull requests` and
+`workflows` on every repository the sweep covers, and nothing else.
+`workflows` matters in its own right: every file the sweep rewrites
+lives under `.github/workflows`. Minting the token fails outright when
+a repository in scope is missing from the installation.
+
+The sweep has an App of its own because of that `workflows` grant. The
+organisation's general bot, `lf-releng-general-bot`, holds no such
+grant: four repositories hold its key, and any of them could otherwise
+rewrite workflows across its installation. This App's key lives in one
+place, the `production` environment of this repository, which deploys
+from `main` alone, so a workflow on any other branch cannot read it.
+The credentials take names of their own rather than the general bot's
+`LF_RELENG_BOT_*`: an environment value under that name would override
+the organisation variable without a word.
 
 The bot's token writes and does nothing else. Repository discovery and
 the linter's own lookups use the ephemeral `GITHUB_TOKEN`: listing an

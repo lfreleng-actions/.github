@@ -234,9 +234,9 @@ jobs:
       - name: 'Check bot credentials'
         shell: bash
         env:
-          CLIENT_ID: '${{ vars.LF_RELENG_BOT_CLIENT_ID }}'
+          CLIENT_ID: '${{ vars.ALLOW_LIST_BOT_CLIENT_ID }}'
           # yamllint disable-line rule:line-length
-          KEY_PRESENT: "${{ secrets.LF_RELENG_BOT_PRIVATE_KEY != '' }}"
+          KEY_PRESENT: "${{ secrets.ALLOW_LIST_BOT_PRIVATE_KEY != '' }}"
           DRY_RUN: '${{ inputs.dry-run }}'
         run: |
           # Check bot credentials
@@ -251,14 +251,14 @@ jobs:
           set -euo pipefail
           missing=''
           if [ -z "${CLIENT_ID}" ]; then
-            missing='vars.LF_RELENG_BOT_CLIENT_ID'
+            missing='vars.ALLOW_LIST_BOT_CLIENT_ID'
           fi
           if [ "${KEY_PRESENT}" != 'true' ]; then
             missing="${missing:+${missing} and }"
-            missing="${missing}secrets.LF_RELENG_BOT_PRIVATE_KEY"
+            missing="${missing}secrets.ALLOW_LIST_BOT_PRIVATE_KEY"
           fi
           if [ -n "${missing}" ]; then
-            msg="The allow-list sweep needs the LF RelEng bot App"
+            msg="The allow-list sweep needs its own bot App"
             msg="${msg} credentials: ${missing} is not set for the"
             msg="${msg} 'production' environment"
             if [ "${DRY_RUN}" = 'true' ]; then
@@ -269,18 +269,21 @@ jobs:
             fi
           fi
 
-      # Pull requests come from the organisation's bot so that a
-      # maintainer can review and merge them. An App token also lets the
-      # required checks run on the pull requests it opens, which the
-      # ephemeral GITHUB_TOKEN deliberately suppresses.
+      # Pull requests come from the sweep's own bot so that a maintainer
+      # can review and merge them. An App token also lets the required
+      # checks run on the pull requests it opens, which the ephemeral
+      # GITHUB_TOKEN deliberately suppresses. The App is the sweep's
+      # alone because it holds Workflows: write, which the general
+      # organisation bot must not: its key would otherwise reach every
+      # repository that holds that bot's key.
       - name: 'Mint bot token'
         id: 'token'
         if: "!inputs.dry-run"
         # yamllint disable-line rule:line-length
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510  # v3.3.0
         with:
-          client-id: '${{ vars.LF_RELENG_BOT_CLIENT_ID }}'
-          private-key: '${{ secrets.LF_RELENG_BOT_PRIVATE_KEY }}'
+          client-id: '${{ vars.ALLOW_LIST_BOT_CLIENT_ID }}'
+          private-key: '${{ secrets.ALLOW_LIST_BOT_PRIVATE_KEY }}'
           owner: '${{ needs.discover.outputs.org }}'
           # Scoped to the repositories actually being swept, so the token
           # cannot reach anything discovery ruled out of scope.
