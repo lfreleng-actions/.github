@@ -104,6 +104,13 @@ level. Each entry below says how the rest reach repositories.
   Slack notification to `#releng-scm` when it finds new repositories
   that lack documentation or an explicit exclusion entry, or archived
   repositories that the README still lists.
+- **[`scorecard-slots.yaml`](.github/workflows/scorecard-slots.yaml)** —
+  Runs on a weekly schedule (Monday 10:15 UTC). Reads every public,
+  non-archived, non-fork repository's OpenSSF Scorecard schedule and
+  reports any Sunday slot two repositories share, or a schedule that
+  is not weekly on Sunday, naming a free slot for each repository
+  that should move. Posts to `#releng-scm` when it finds one. See
+  [Scorecard Slot Audit](#scorecard-slot-audit) below.
 - **[`zizmor.yaml`](.github/workflows/zizmor.yaml)** — Organisation-wide
   static security audit of GitHub Actions workflows and composite actions
   using [zizmor](https://docs.zizmor.sh/). Runs on every pull request
@@ -1442,6 +1449,48 @@ The workflow requires:
 
 See the [Slack setup instructions](#slack-setup) below.
 
+### Scorecard Slot Audit
+
+Each repository runs OpenSSF Scorecard weekly on Sunday in a minute of
+its own. The slots sit at minute-of-day `4 + 9k` UTC for `k` from 0 to
+159 (00:04, 00:13, and so on to 23:55), so none falls on `:00` or
+`:30`. A repository created from a template inherits the template's
+`- cron:` line, and with it the template's slot, until someone moves
+it. The `scorecard-slots.yaml` workflow catches that:
+
+1. Lists the public, non-archived, non-fork repositories of the
+   organisation it runs in
+2. Reads the `- cron:` lines under `schedule:` in
+   `.github/workflows/openssf-scorecard.yaml` on each default branch,
+   and in `openssf-scorecard-self.yaml`, where `security-workflows`
+   keeps its schedule
+3. Reports each cron value two or more repositories share, and each
+   Scorecard schedule that is not weekly on Sunday
+4. Names a free slot for every repository that should move: the first
+   unused grid slot, or once the grid is full the first unused minute
+   that is not `:00` or `:30`
+5. Writes the findings to the job summary as a table, and posts to
+   `#releng-scm` when there is one
+
+In a shared slot, the repository that has held it longest keeps it. A
+template always keeps its slot, so the repository created from it
+moves. Otherwise the oldest commit date of the `- cron:` line wins, as
+the default branch's blame reports it, so an unrelated edit elsewhere
+in the file never changes the answer; the oldest repository breaks a
+tie.
+
+The workflow fetches data and nothing more.
+[`.github/scripts/scorecard_slots.py`](.github/scripts/scorecard_slots.py)
+holds the logic, and its offline test suite sits beside it in
+`.github/scripts/tests/`.
+
+The schedule runs under `lfreleng-actions` and nowhere else. A fork
+can dispatch the check by hand to audit the repositories of its own
+owner, an organisation or a personal account; it writes the job
+summary and posts nothing to Slack. It uses the same
+`SLACK_BOT_TOKEN` secret and `SLACK_CHANNEL_ID` variable as the
+repository audit.
+
 ### Excluded Repositories
 
 The `excluded-repos.json` file contains a JSON object with an
@@ -1457,8 +1506,9 @@ repository name to the `excluded` array.
 
 ## Slack Setup
 
-The repository audit workflow, the allow-list DNS check and the
-scheduled zizmor / AI slop SARIF publishers send notifications using
+The repository audit workflow, the Scorecard slot audit, the
+allow-list DNS check and the scheduled zizmor / AI slop SARIF
+publishers send notifications using
 the official
 [Slack GitHub Action](https://github.com/slackapi/slack-github-action).
 They reuse the same `SLACK_BOT_TOKEN` secret and `SLACK_CHANNEL_ID`
