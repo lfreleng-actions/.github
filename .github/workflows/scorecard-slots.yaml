@@ -1,0 +1,233 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
+
+# Weekly check that every repository runs OpenSSF Scorecard in its own
+# Sunday slot.
+#
+# Each repository's Scorecard caller has its own minute on Sunday, on a
+# grid that avoids :00 and :30. A repository created from a template
+# inherits the template's '- cron:' line and shares its slot until
+# someone moves it. This workflow reads every public, non-archived,
+# non-fork repository's Scorecard schedule from its default branch and
+# reports any slot two repositories share and any schedule that is not
+# weekly on Sunday, naming a free slot for each repository that should
+# move.
+#
+# The workflow only fetches data; .github/scripts/scorecard_slots.py
+# holds the logic and its offline test suite sits beside it. The
+# repository that has held a shared slot longest keeps it: a template
+# first, then the oldest commit date of the cron line, read from the
+# GraphQL blame of the file, so a Dependabot bump elsewhere in the file
+# never changes the answer.
+#
+# A workflow of its own rather than a job in repo-audit.yaml: that
+# workflow audits the profile README against a hard-coded organisation,
+# while this one targets the organisation it runs in and needs owner
+# gating, so a fork can dispatch it without posting to Slack.
+
+name: 'Scorecard Slot Audit'
+
+# yamllint disable-line rule:truthy
+on:
+  schedule:
+    # Run every Monday at 10:15 UTC, the day after Scorecard runs
+    - cron: '15 10 * * 1'
+  workflow_dispatch: {}
+
+permissions: {}
+
+# Turn off GitHub CLI telemetry. Steps below shell out to 'gh', which
+# otherwise POSTs usage events to cafe.github.com -- an endpoint no job
+# here needs, and one the org egress allow-list blocks, so every run
+# reports a spurious blocked connection. GH_TELEMETRY takes precedence
+# over DO_NOT_TRACK, so this one variable covers both.
+env:
+  GH_TELEMETRY: 'false'
+
+# Local to this repository, so no 'org-' prefix; see
+# release-drafter.yaml.
+concurrency:
+  group: 'scorecard-slots-${{ github.ref }}'
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: 'Audit Scorecard Schedule Slots'
+    # The schedule runs only in lfreleng-actions; a fork can still
+    # dispatch the check, and the Slack step below skips there.
+    if: >-
+      github.event_name != 'schedule'
+      || github.repository_owner == 'lfreleng-actions'
+    # Run this job in a dedicated environment so its execution and any
+    # environment-scoped secrets can be gated by environment protection
+    # rules (satisfies zizmor's secrets-outside-env).
+    environment: 'production'
+    permissions:
+      contents: read
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 15
+    steps:
+      # Load the egress allow-list out-of-band from
+      # lfreleng-actions/.github and publish it as
+      # $CONNECTION_ALLOW_LIST for the harden-runner step below.
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@65ff87957e1cac2de3203a85dbb07c31810321cb  # v0.16.4
+        with:
+          config: '@dfa09089d9d88230380539d2116810910347d378'  # v0.22.0
+
+      # Harden the runner with the just-loaded allow-list.
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c  # v2.23.0
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: 'Checkout repository'
+        # yamllint disable-line rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # An explicit version and update-environment 'false' leave PATH
+      # untouched; the audit step runs the interpreter by path.
+      - name: 'Set up Python'
+        id: 'setup-python'
+        # yamllint disable-line rule:line-length
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '>=3.11'
+          update-environment: 'false'
+
+      # Write the layout scorecard_slots.py documents: repos.json, then
+      # each Scorecard workflow file and its blame ranges per
+      # repository. A missing file is not an error; any API failure is.
+      - name: 'Fetch Scorecard schedules'
+        shell: bash
+        env:
+          GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+          ORG: '${{ github.repository_owner }}'
+        run: |
+          # Fetch Scorecard schedules
+          set -euo pipefail
+          data="${RUNNER_TEMP}/scorecard-slots"
+          mkdir -p "${data}"
+
+          # A fork may belong to a personal account, which has no
+          # /orgs/ endpoint; list a user's own repositories instead.
+          owner_type="$(gh api "/users/${ORG}" --jq '.type')"
+          if [[ "${owner_type}" == 'Organization' ]]; then
+            listing="/orgs/${ORG}/repos?per_page=100"
+          else
+            listing="/users/${ORG}/repos?per_page=100&type=owner"
+          fi
+          gh api --paginate "${listing}" \
+            --jq '.[] | select(.visibility == "public"
+                               and (.archived | not) and (.fork | not))
+                       | {name, is_template, created_at}' \
+            | jq -s '.' > "${data}/repos.json"
+          echo "Repositories to audit: $(jq length "${data}/repos.json")"
+
+          # Single quotes keep the GraphQL variables for gh to bind.
+          # Both files and their blame come from one commit, the default
+          # branch tip the first query reads, so a push between the
+          # requests cannot pair a line with another version's blame.
+          # shellcheck disable=SC2016
+          files_query='
+            query($owner: String!, $name: String!,
+                  $main: String!, $self: String!) {
+              repository(owner: $owner, name: $name) {
+                defaultBranchRef { target { ... on Commit {
+                  oid
+                  main: file(path: $main) { object { ... on Blob { text } } }
+                  self: file(path: $self) { object { ... on Blob { text } } }
+                } } }
+              }
+            }'
+          # shellcheck disable=SC2016
+          blame_query='
+            query($owner: String!, $name: String!,
+                  $oid: GitObjectID!, $path: String!) {
+              repository(owner: $owner, name: $name) {
+                object(oid: $oid) { ... on Commit {
+                  blame(path: $path) {
+                    ranges { startingLine endingLine commit { committedDate } }
+                  }
+                } }
+              }
+            }'
+
+          mapfile -t names < <(jq -r '.[].name' "${data}/repos.json")
+          for name in "${names[@]}"; do
+            dir="${data}/${name}"
+            mkdir -p "${dir}"
+            files="$(gh api graphql -f query="${files_query}" \
+              -f owner="${ORG}" -f name="${name}" \
+              -f main='.github/workflows/openssf-scorecard.yaml' \
+              -f self='.github/workflows/openssf-scorecard-self.yaml' \
+              --jq '.data.repository.defaultBranchRef.target')"
+            for pair in main:openssf-scorecard.yaml \
+                        self:openssf-scorecard-self.yaml; do
+              alias="${pair%%:*}"
+              file="${pair#*:}"
+              if ! jq -e --arg a "${alias}" '.[$a].object.text != null' \
+                <<< "${files}" > /dev/null; then
+                continue
+              fi
+              jq -j --arg a "${alias}" '.[$a].object.text' \
+                <<< "${files}" > "${dir}/${file}"
+              gh api graphql -f query="${blame_query}" \
+                -f owner="${ORG}" -f name="${name}" \
+                -f oid="$(jq -r '.oid' <<< "${files}")" \
+                -f path=".github/workflows/${file}" \
+                --jq '.data.repository.object.blame.ranges' \
+                > "${dir}/${file}.blame.json"
+            done
+          done
+
+      - name: 'Audit Scorecard slots'
+        id: 'audit'
+        shell: bash
+        env:
+          PYTHON: '${{ steps.setup-python.outputs.python-path }}'
+        run: |
+          # Audit Scorecard slots
+          set -euo pipefail
+          "${PYTHON}" -I .github/scripts/scorecard_slots.py \
+            "--data=${RUNNER_TEMP}/scorecard-slots" \
+            "--summary=${GITHUB_STEP_SUMMARY}" \
+            "--output=${GITHUB_OUTPUT}"
+
+      - name: 'Send Slack notification (shared Scorecard slots)'
+        if: >-
+          steps.audit.outputs.findings != '0'
+          && github.repository_owner == 'lfreleng-actions'
+        # yamllint disable-line rule:line-length
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d  # v4.0.0
+        with:
+          method: 'chat.postMessage'
+          token: "${{ secrets.SLACK_BOT_TOKEN }}"
+          # yamllint disable rule:line-length
+          payload: |
+            channel: "${{ vars.SLACK_CHANNEL_ID }}"
+            text: "🗓️ *Scorecard Slot Audit: ${{ steps.audit.outputs.findings }} schedules need attention*"
+            blocks:
+              - type: "header"
+                text:
+                  type: "plain_text"
+                  text: "🗓️ lfreleng-actions Scorecard Slot Audit"
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: "*${{ steps.audit.outputs.findings }} OpenSSF Scorecard schedules* share a slot with another repository or do not run weekly on Sunday. Move each repository below to the slot named:"
+              - type: "section"
+                text:
+                  type: "mrkdwn"
+                  text: "```${{ steps.audit.outputs.slack_list }}```"
+              - type: "context"
+                elements:
+                  - type: "mrkdwn"
+                    text: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+          # yamllint enable rule:line-length
