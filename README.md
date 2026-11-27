@@ -81,10 +81,10 @@ level. Each entry below says how the rest reach repositories.
 - **[`allow-list-bump.yaml`](.github/workflows/allow-list-bump.yaml)** —
   A scheduled (Monday 05:00 UTC) sweep that bumps stale
   `step-security/harden-runner` egress allow-list pins across the
-  `*-workflows` family and opens a pull request per repository, authored
-  by the organisation's bot. These pins are values of `config:` and
-  `default:` keys rather than `uses:` references, so Dependabot cannot
-  see them and they drift. See
+  `*-workflows` family plus `central-publish-action` and opens a pull
+  request per repository, authored by the organisation's bot. These
+  pins are values of `config:` and `default:` keys rather than `uses:`
+  references, so Dependabot cannot see them and they drift. See
   [Allow-list bump sweep](#allow-list-bump-sweep) below for setup.
 - **[`allow-list-dns-check.yaml`](.github/workflows/allow-list-dns-check.yaml)**
   — A scheduled (daily, 04:30 UTC) check that every non-wildcard
@@ -1197,10 +1197,11 @@ A caller with a standing scope of its own passes it as
 `default-include`: the same glob syntax, which discovery applies when
 the run names no repository and drops when it names one, so a named
 repository outside that scope is still swept. The allow-list bump
-sweep uses it for the `*-workflows` family. Discovery makes the
-decision after splitting the names, so input consisting of separators
-counts as naming nothing and keeps the default, rather than lifting it
-and widening the run to the whole organisation.
+sweep uses it for the `*-workflows` family plus
+`central-publish-action`. Discovery makes the decision after splitting
+the names, so input consisting of separators counts as naming nothing
+and keeps the default, rather than lifting it and widening the run to
+the whole organisation.
 
 ### Allow-list bump sweep
 
@@ -1241,25 +1242,28 @@ allow-list host rather than one per repository.
 
 #### Scope
 
-The scheduled sweep covers the **`*-workflows` family**, and nothing
-else. Those repositories host the reusable build workflows consumers
-run, where a missing endpoint breaks real builds in downstream
-projects. Standard GitHub plumbing elsewhere in the organisation
-touches a small, stable endpoint set, so a pin some versions behind has
-little practical effect, and weekly pull requests against it would
-create review noise.
+The scheduled sweep covers the **`*-workflows` family** plus
+**`central-publish-action`**, and nothing else. The family hosts the
+reusable build workflows consumers run, where a missing endpoint breaks
+real builds in downstream projects. `central-publish-action` pins the
+list in `block` mode and its jobs reach a publishing host
+(`central.sonatype.com`), so an endpoint the central list gains but its
+pin misses would fail a required status check there and block merges.
+Standard GitHub plumbing elsewhere in the organisation touches a small,
+stable endpoint set, so a pin some versions behind has little practical
+effect, and weekly pull requests against it would create review noise.
 
 A manual run serves the other case: selective updates to repositories
 an operator names. The `repo` input takes repository names (commas,
 spaces or newlines; the
 [list-splitter-action](https://github.com/lfreleng-actions/list-splitter-action)
 in discovery validates and deduplicates them), and the sweep then
-covers those repositories and no others, inside the family or not.
-Discovery reports every name it cannot read before it fails, so a
-list with two typos needs one corrected re-run. To widen the family
-for one run instead, leave `repo` blank and supply `extra-include`
-globs. A manual run may also set `linter-version` to try a newer
-linter release on that run alone (see Behaviour). The
+covers those repositories and no others, inside the default scope or
+not. Discovery reports every name it cannot read before it fails, so a
+list with two typos needs one corrected re-run. To widen the default
+scope for one run instead, leave `repo` blank and supply
+`extra-include` globs. A manual run may also set `linter-version` to
+try a newer linter release on that run alone (see Behaviour). The
 `ALLOW_LIST_BUMP_EXCLUDE` variable removes repositories from every
 run, named or not, and discovery warns about each named repository it
 removes.

@@ -50,15 +50,18 @@
 # that run installs unlocked, by design, since the lock cannot hold a
 # release nobody has adopted yet. The schedule always runs the lock.
 #
-# The schedule sweeps the *-workflows family: those host the reusable
-# build workflows consumers actually run, where a missing endpoint
-# breaks real builds. Standard GitHub plumbing elsewhere in the
+# The schedule sweeps the *-workflows family plus central-publish-action.
+# The family hosts the reusable build workflows consumers actually run,
+# where a missing endpoint breaks real builds. central-publish-action
+# pins the list in block mode and its jobs reach a publishing host, so
+# an endpoint the central list gains but its pin misses blocks a
+# required check there. Standard GitHub plumbing elsewhere in the
 # organisation touches a small, stable endpoint set, so a pin several
 # versions behind has little practical effect and weekly pull requests
 # against it would be review noise. A manual run serves the other
 # case: name repositories in 'repo' and the sweep covers those and no
-# others, inside the family or not, or give 'extra-include' globs to
-# widen the family for one run.
+# others, inside the default scope or not, or give 'extra-include'
+# globs to widen the default scope for one run.
 #
 # Two properties of the pull requests it raises are deliberate:
 #
@@ -89,12 +92,12 @@ on:
         default: ''
       repo:
         # yamllint disable-line rule:line-length
-        description: 'Sweep these repositories and no others (names only; commas, spaces or newlines); blank sweeps the *-workflows family'
+        description: 'Sweep these repositories and no others (names only; commas, spaces or newlines); blank sweeps the *-workflows family plus central-publish-action'
         required: false
         default: ''
       extra-include:
         # yamllint disable-line rule:line-length
-        description: 'Include globs added to *-workflows, or applied alone when repo names repositories (commas, spaces or newlines)'
+        description: 'Include globs added to *-workflows and central-publish-action, or applied alone when repo names repositories (commas, spaces or newlines)'
         required: false
         default: ''
       dry-run:
@@ -151,7 +154,7 @@ jobs:
       # drop the family, and sweep the whole organisation. The exclude
       # list still applies to every run, and discovery warns about
       # each named repository it removes.
-      default-include: '*-workflows'
+      default-include: '*-workflows, central-publish-action'
       extra-include: '${{ inputs.extra-include }}'
       extra-exclude: '${{ vars.ALLOW_LIST_BUMP_EXCLUDE }}'
     secrets:
@@ -1309,7 +1312,7 @@ jobs:
               - type: "section"
                 text:
                   type: "mrkdwn"
-                  text: "The weekly harden-runner allow-list sweep failed. Pins across the *-workflows family may be stale until it re-runs successfully."
+                  text: "The weekly harden-runner allow-list sweep failed. Pins across the *-workflows family and central-publish-action may be stale until it re-runs successfully."
               - type: "context"
                 elements:
                   - type: "mrkdwn"
