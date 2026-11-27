@@ -42,7 +42,7 @@ jobs:
   verify:
     name: 'Check SHA pinned actions'
     # yamllint disable-line rule:line-length
-    uses: lfreleng-actions/security-workflows/.github/workflows/action-pin-audit.yaml@6edd9018efda10b7a429d0bb4658b5aa4bb2cd3f  # v0.10.1
+    uses: lfreleng-actions/security-workflows/.github/workflows/action-pin-audit.yaml@7068945721777165a83b8ddcda5e105f95c706fb  # v0.11.0
     permissions:
       contents: read  # Lane checks out the repository under audit
     with:
